@@ -43,8 +43,12 @@ func main() {
 	}
 
 	var data []byte
+	var baseDir string
 	if *in == "" {
 		data, err = io.ReadAll(os.Stdin)
+		if err == nil {
+			baseDir, err = os.Getwd()
+		}
 	} else {
 		var f *os.File
 		f, err = os.Open(*in)
@@ -53,6 +57,9 @@ func main() {
 		}
 		defer f.Close()
 		data, err = io.ReadAll(f)
+		if err == nil {
+			baseDir, err = filepath.Abs(filepath.Dir(*in))
+		}
 	}
 	if err != nil {
 		fatal(err)
@@ -66,6 +73,7 @@ func main() {
 		Fonts:          fonts,
 		LinkFootnotes:  footnoteLinks,
 		ImageFootnotes: footnoteImages,
+		BaseDir:        baseDir,
 	})
 	if err != nil {
 		fatal(err)

@@ -1,7 +1,16 @@
 package md2png
 
 import (
+	"bytes"
+	"fmt"
 	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,6 +109,7 @@ func TestRendererFootnoteCollection(t *testing.T) {
 		linkFootnotes:  true,
 		imageFootnotes: true,
 	}
+	r.ensureImageResolvers()
 	markdown := []byte("First [link](https://example.com) and second [same](https://example.com) ![img](https://example.com/image.png)")
 	if err := r.render(markdown); err != nil {
 		t.Fatalf("render failed: %v", err)
@@ -124,6 +134,7 @@ func TestRendererFootnoteToggles(t *testing.T) {
 		linkFootnotes:  false,
 		imageFootnotes: true,
 	}
+	r.ensureImageResolvers()
 	markdown := []byte("[link](https://example.com) ![img](https://example.com/image.png)")
 	if err := r.render(markdown); err != nil {
 		t.Fatalf("render failed: %v", err)
@@ -163,5 +174,82 @@ func TestRenderFootnoteDefaults(t *testing.T) {
 	}
 	if imgWithImages.Bounds().Dy() <= imgDefault.Bounds().Dy() {
 		t.Fatalf("expected enabling image footnotes to increase image height")
+	}
+}
+
+func TestRenderEmbedsLocalImage(t *testing.T) {
+	tmpDir := t.TempDir()
+	block := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	draw.Draw(block, block.Bounds(), image.NewUniform(color.RGBA{R: 0xCC, G: 0x22, B: 0x22, A: 0xFF}), image.Point{}, draw.Src)
+	imgPath := filepath.Join(tmpDir, "block.png")
+	file, err := os.Create(imgPath)
+	if err != nil {
+		t.Fatalf("create temp image: %v", err)
+	}
+	if err := png.Encode(file, block); err != nil {
+		file.Close()
+		t.Fatalf("encode temp image: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close temp image: %v", err)
+	}
+
+	markdown := fmt.Sprintf("![local image](%s)", filepath.Base(imgPath))
+	rendered, err := Render([]byte(markdown), RenderOptions{BaseDir: tmpDir, Width: 200, Margin: 24})
+	if err != nil {
+		t.Fatalf("render with local image failed: %v", err)
+	}
+
+	want := color.RGBA{R: 0xCC, G: 0x22, B: 0x22, A: 0xFF}
+	bounds := rendered.Bounds()
+	found := false
+	for y := bounds.Min.Y + 24; y < bounds.Max.Y-24 && !found; y++ {
+		for x := bounds.Min.X + 24; x < bounds.Max.X-24; x++ {
+			r, g, b, a := rendered.At(x, y).RGBA()
+			if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B && uint8(a>>8) == want.A {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected rendered output to include embedded image pixels")
+	}
+}
+
+func TestRenderEmbedsRemoteImage(t *testing.T) {
+	block := image.NewRGBA(image.Rect(0, 0, 20, 12))
+	want := color.RGBA{R: 0x20, G: 0x80, B: 0xCC, A: 0xFF}
+	draw.Draw(block, block.Bounds(), image.NewUniform(want), image.Point{}, draw.Src)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, block); err != nil {
+		t.Fatalf("encode sample image: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer srv.Close()
+
+	markdown := fmt.Sprintf("![remote](%s/sample.png)", srv.URL)
+	rendered, err := Render([]byte(markdown), RenderOptions{Width: 220, Margin: 24})
+	if err != nil {
+		t.Fatalf("render with remote image failed: %v", err)
+	}
+
+	bounds := rendered.Bounds()
+	found := false
+	for y := bounds.Min.Y + 24; y < bounds.Max.Y-24 && !found; y++ {
+		for x := bounds.Min.X + 24; x < bounds.Max.X-24; x++ {
+			r, g, b, a := rendered.At(x, y).RGBA()
+			if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B && uint8(a>>8) == want.A {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected rendered output to include remote image pixels")
 	}
 }
