@@ -68,6 +68,8 @@ No external tools required — just Go ≥1.22.
 | `-font` | Regular font (TTF path) | built-in Go Regular |
 | `-fontbold` | Bold font (TTF path) | built-in Go Bold |
 | `-fontmono` | Monospace font (TTF path) | built-in Go Mono |
+| `-footnote-links` | Append link destinations as numbered footnotes | `true` |
+| `-footnote-images` | Append image destinations as numbered footnotes | `false` |
 
 ---
 
@@ -133,7 +135,7 @@ func main() {
 }
 ```
 
-`RenderOptions` accepts custom dimensions, themes, and fonts. To load your own TTFs, call `md2png.LoadFonts` and pass the result to `RenderOptions.Fonts`.
+`RenderOptions` accepts custom dimensions, themes, fonts, and footnote toggles. To load your own TTFs, call `md2png.LoadFonts` and pass the result to `RenderOptions.Fonts`. Set `RenderOptions.LinkFootnotes` or `RenderOptions.ImageFootnotes` to override the default link/image footnote behavior from code.
 
 ---
 
