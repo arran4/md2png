@@ -9,7 +9,7 @@ before:
     - go test ./...
     # Render the README to a PNG so releases can ship the up-to-date output.
     - mkdir -p dist
-    - go run . -in README.md -out dist/README.png
+    - go run ./cmd/md2png -in README.md -out dist/README.png
 
 builds:
   - id: md2png
