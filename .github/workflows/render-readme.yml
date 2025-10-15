@@ -1,0 +1,53 @@
+name: Render README preview
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  generate-preview:
+    name: Generate README preview
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Render README to PNG
+        run: go run . -in README.md -out output.png
+
+      - name: Post preview comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const data = fs.readFileSync('output.png', { encoding: 'base64' });
+            const identifier = '<!-- md2png-preview -->';
+            const body = [
+              identifier,
+              '## README Preview',
+              `![Rendered README](data:image/png;base64,${data})`
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body,
+            });
