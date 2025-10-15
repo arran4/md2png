@@ -1,0 +1,170 @@
+project_name: md2png
+# A comprehensive GoReleaser configuration providing cross-platform builds,
+# package managers, container images, and reproducible release assets.
+before:
+  hooks:
+    # Ensure the module graph is tidy before building.
+    - go mod tidy
+    # Run the full test suite so releases only ship green builds.
+    - go test ./...
+
+builds:
+  - id: md2png
+    main: .
+    binary: md2png
+    gobinary: go
+    env:
+      # Build fully static binaries so cross compilation works out of the box.
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - 386
+    goarm:
+      - 6
+      - 7
+    ignore:
+      # Unsupported or rarely requested combinations are skipped explicitly.
+      - goos: darwin
+        goarch: 386
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+    ldflags:
+      - -s -w
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitDate }}'
+    asmflags:
+      - all=-trimpath={{ .ProjectRoot }}
+    gcflags:
+      - all=-trimpath={{ .ProjectRoot }}
+
+archives:
+  - id: release-archives
+    builds:
+      - md2png
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - example.png
+    replacements:
+      darwin: macOS
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{- title .Os }}_{{- .Arch }}{{- with .Arm }}v{{ . }}{{ end }}'
+
+checksum:
+  name_template: '{{ .ProjectName }}_checksums.txt'
+
+signs:
+  - id: checksums
+    cmd: gpg
+    artifacts: checksum
+    env:
+      - GNUPGHOME={{ .Env.GNUPGHOME }}
+    args:
+      - --batch
+      - --yes
+      - --armor
+      - --local-user
+      - '{{ .Env.GPG_FINGERPRINT }}'
+      - --output
+      - '${artifact}.asc'
+      - --sign
+      - '${artifact}'
+
+nfpms:
+  - id: linux-packages
+    package_name: md2png
+    maintainer: 'Arran4 OSS <oss@arran4.com>'
+    description: 'md2png renders Markdown directly to PNG or JPEG images via a single static Go binary.'
+    homepage: 'https://github.com/arran4/md2png'
+    license: MIT
+    vendor: Arran4
+    formats:
+      - deb
+      - rpm
+      - apk
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/md2png/README.md
+        type: doc
+    scripts:
+      # Create the documentation directory if it does not exist already.
+      preinstall: |
+        #!/usr/bin/env sh
+        set -e
+        install -d -m 0755 /usr/share/doc/md2png
+
+brews:
+  - name: md2png
+    commit_author:
+      name: Arran4 Automation
+      email: oss@arran4.com
+    tap:
+      owner: arran4
+      name: homebrew-tap
+    folder: Formula
+    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
+    homepage: 'https://github.com/arran4/md2png'
+    description: 'Render Markdown files to PNG or JPEG images without external runtimes.'
+    license: 'MIT'
+    test: |
+      system '#{bin}/md2png', '-help'
+    caveats: |
+      md2png renders Markdown straight to images. Pass `-in` and `-out` flags
+      to convert files, or read from stdin when `-in` is omitted.
+
+scoops:
+  - name: md2png
+    bucket:
+      owner: arran4
+      name: scoop-bucket
+    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
+    description: 'Render Markdown to PNG/JPG with a single static Go binary.'
+    homepage: 'https://github.com/arran4/md2png'
+    license: MIT
+    checkver: github
+    autoupdate:
+      url: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+release:
+  github:
+    owner: arran4
+    name: md2png
+  draft: false
+  prerelease: auto
+  footer: |
+    ### md2png binaries
+    Thanks for downloading md2png! If you run into any problems, please open an issue at https://github.com/arran4/md2png/issues.
+
+announce:
+  mastodon:
+    enabled: true
+    message_template: |
+      md2png {{ .Tag }} is out! Render Markdown directly to PNG/JPG from the command line.
+      Release notes: {{ .ReleaseURL }}
+      #golang #markdown
+
