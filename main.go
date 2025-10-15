@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
@@ -69,8 +70,9 @@ var (
 // ---- Font loading ----
 
 type FontAndFace struct {
-	Font *truetype.Font
-	Face font.Face
+	Font     *truetype.Font
+	Face     font.Face
+	baseSize float64
 }
 
 type Fonts struct {
@@ -93,8 +95,9 @@ func loadFontAndFace(ttfBytes []byte, size float64) (*FontAndFace, error) {
 	}
 	face := truetype.NewFace(ft, &truetype.Options{Size: size, DPI: 96, Hinting: font.HintingFull})
 	return &FontAndFace{
-		Font: ft,
-		Face: face,
+		Font:     ft,
+		Face:     face,
+		baseSize: size,
 	}, err
 }
 
@@ -214,7 +217,7 @@ func (c *canvas) drawTextWrapped(fnt *FontAndFace, col color.Color, size float64
 	var line string
 	for _, w := range words {
 		candidate := strings.TrimSpace(line + " " + w)
-		if measureWidth(fnt, candidate) <= maxWidth {
+		if measureWidth(fnt, size, candidate) <= maxWidth {
 			line = candidate
 		} else {
 			if line != "" {
@@ -236,14 +239,34 @@ func (c *canvas) drawTextWrapped(fnt *FontAndFace, col color.Color, size float64
 	return len(lines)
 }
 
-func measureWidth(fnt *FontAndFace, s string) float64 {
+func measureWidth(fnt *FontAndFace, size float64, s string) float64 {
+	if fnt == nil || s == "" {
+		return 0
+	}
 	// freetype.Context lacks a direct width measurement; approximate using font.Drawer
 	var d font.Drawer
 	d.Face = fnt.Face
 	// d.Dot fixed point ignores size; face was created at size
 	d.Src = image.NewUniform(color.Black)
 	d.Dst = nil
-	return float64(d.MeasureString(s).Round())
+	width := float64(d.MeasureString(s).Round())
+	base := fnt.baseSize
+	if base <= 0 {
+		base = size
+	}
+	if base <= 0 {
+		base = 1
+	}
+	if size <= 0 {
+		size = base
+	}
+	if size <= 0 {
+		size = 1
+	}
+	if size != base {
+		width *= size / base
+	}
+	return width
 }
 
 func (c *canvas) addVSpace(px int) { c.cursorY += px }
@@ -298,7 +321,7 @@ func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []s
 		var line string
 		for _, w := range words {
 			candidate := strings.TrimSpace(line + " " + w)
-			if measureWidth(ff, candidate) <= maxWidth {
+			if measureWidth(ff, size, candidate) <= maxWidth {
 				line = candidate
 			} else {
 				if line != "" {
@@ -386,6 +409,38 @@ type styledWord struct {
 	color color.Color
 }
 
+func splitTextPreserveSpaces(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var parts []string
+	var current strings.Builder
+	lastType := 0 // 0 unknown, 1 space, 2 non-space
+	for _, r := range s {
+		typ := 2
+		if unicode.IsSpace(r) {
+			typ = 1
+		}
+		if lastType == 0 {
+			current.WriteRune(r)
+			lastType = typ
+			continue
+		}
+		if typ == lastType {
+			current.WriteRune(r)
+			continue
+		}
+		parts = append(parts, current.String())
+		current.Reset()
+		current.WriteRune(r)
+		lastType = typ
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
+}
+
 func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 	if len(tokens) == 0 {
 		return
@@ -416,18 +471,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 		}
 		baseline := c.cursorY + int(baselineSize)
 		x := left
-		for i, w := range line {
+		for _, w := range line {
 			if w.font == nil {
 				w.font = c.fonts.Regular
-			}
-			if i > 0 {
-				spaceWidth := measureWidth(line[i-1].font, " ")
-				x += int(spaceWidth)
 			}
 			c.setFace(w.font, w.color, w.size)
 			pt := freetype.Pt(x, baseline)
 			_, _ = c.dc.DrawString(w.text, pt)
-			x += int(measureWidth(w.font, w.text))
+			x += int(measureWidth(w.font, w.size, w.text))
 		}
 		lineHeight := int(baselineSize * 1.4)
 		if lineHeight <= 0 {
@@ -448,24 +499,29 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 		if font == nil {
 			font = c.fonts.Regular
 		}
-		words := strings.Fields(tok.text)
-		for _, w := range words {
-			wordWidth := measureWidth(font, w)
-			extra := 0.0
-			if len(line) > 0 {
-				extra = measureWidth(line[len(line)-1].font, " ")
+		segments := splitTextPreserveSpaces(tok.text)
+		for _, seg := range segments {
+			if seg == "" {
+				continue
 			}
-			if lineWidth+extra+wordWidth > maxWidth && len(line) > 0 {
+			isSpace := unicode.IsSpace([]rune(seg)[0])
+			segWidth := measureWidth(font, tok.size, seg)
+			if isSpace {
+				if len(line) == 0 {
+					continue
+				}
+				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+				lineWidth += segWidth
+				continue
+			}
+			if lineWidth+segWidth > maxWidth && len(line) > 0 {
 				flush(false)
 			}
-			if len(line) > 0 {
-				lineWidth += extra
-			}
-			line = append(line, styledWord{text: w, font: font, size: tok.size, color: tok.color})
+			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
-			lineWidth += wordWidth
+			lineWidth += segWidth
 		}
 	}
 	flush(false)
