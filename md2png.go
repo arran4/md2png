@@ -3,6 +3,7 @@ package md2png
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -15,6 +16,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"golang.org/x/image/font"
@@ -59,6 +61,8 @@ var (
 		QuoteBar: color.RGBA{0x44, 0x44, 0x48, 0xFF},
 		HRule:    color.RGBA{0x33, 0x33, 0x36, 0xFF},
 	}
+	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
+	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
 )
 
 // ---- Font loading ----
@@ -307,28 +311,87 @@ func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []s
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		ln := scanner.Text()
-		if strings.TrimSpace(ln) == "" {
+		if ln == "" {
 			lines = append(lines, "")
 			continue
 		}
-		words := strings.Fields(ln)
-		var line string
-		for _, w := range words {
-			candidate := strings.TrimSpace(line + " " + w)
-			if measureWidth(ff, size, candidate) <= maxWidth {
-				line = candidate
-			} else {
-				if line != "" {
-					lines = append(lines, line)
-				}
-				line = w
-			}
+		if maxWidth <= 0 || measureWidth(ff, size, ln) <= maxWidth {
+			lines = append(lines, ln)
+			continue
 		}
-		if line != "" {
-			lines = append(lines, line)
-		}
+		wrapped := wrapLinePreservingSpaces(ff, size, ln, maxWidth)
+		lines = append(lines, wrapped...)
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
 	}
 	return lines
+}
+
+func wrapLinePreservingSpaces(ff *FontAndFace, size float64, line string, maxWidth float64) []string {
+	if line == "" {
+		return []string{""}
+	}
+	tokens := splitTextPreserveSpaces(line)
+	var result []string
+	var current strings.Builder
+	var currentWidth float64
+
+	flush := func() {
+		result = append(result, current.String())
+		current.Reset()
+		currentWidth = 0
+	}
+
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		tokenWidth := measureWidth(ff, size, token)
+		if tokenWidth > maxWidth {
+			if current.Len() > 0 {
+				flush()
+			}
+			result = append(result, breakLongToken(ff, size, token, maxWidth)...)
+			continue
+		}
+		if currentWidth+tokenWidth > maxWidth && current.Len() > 0 {
+			flush()
+		}
+		current.WriteString(token)
+		currentWidth += tokenWidth
+	}
+	if current.Len() > 0 {
+		flush()
+	}
+	if len(result) == 0 {
+		result = append(result, "")
+	}
+	return result
+}
+
+func breakLongToken(ff *FontAndFace, size float64, token string, maxWidth float64) []string {
+	var parts []string
+	var current strings.Builder
+	var width float64
+	for _, r := range token {
+		ch := string(r)
+		charWidth := measureWidth(ff, size, ch)
+		if width+charWidth > maxWidth && current.Len() > 0 {
+			parts = append(parts, current.String())
+			current.Reset()
+			width = 0
+		}
+		current.WriteString(ch)
+		width += charWidth
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	if len(parts) == 0 {
+		parts = append(parts, token)
+	}
+	return parts
 }
 
 // ---- Markdown -> draw ----
@@ -338,12 +401,19 @@ type renderer struct {
 	baseSize float64
 }
 
+const (
+	listIndentStep  = 32
+	listMarkerWidth = 28
+	listMarkerGap   = 8
+)
+
 type textToken struct {
-	text    string
-	font    *FontAndFace
-	size    float64
-	color   color.Color
-	newline bool
+	text      string
+	font      *FontAndFace
+	size      float64
+	color     color.Color
+	underline bool
+	newline   bool
 }
 
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
@@ -367,6 +437,21 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 			if c.SoftLineBreak() || c.HardLineBreak() {
 				*out = append(*out, textToken{newline: true})
+			}
+		case *ast.Link:
+			before := len(*out)
+			r.collectInlineTokens(c, md, font, size, linkColor, out)
+			for i := before; i < len(*out); i++ {
+				(*out)[i].color = linkColor
+				(*out)[i].underline = true
+			}
+		case *ast.AutoLink:
+			label := string(c.Label(md))
+			if label == "" {
+				label = string(c.URL(md))
+			}
+			if label != "" {
+				*out = append(*out, textToken{text: label, font: font, size: size, color: linkColor, underline: true})
 			}
 		case *ast.Paragraph:
 			r.collectInlineTokens(c, md, font, size, color, out)
@@ -397,10 +482,11 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 }
 
 type styledWord struct {
-	text  string
-	font  *FontAndFace
-	size  float64
-	color color.Color
+	text      string
+	font      *FontAndFace
+	size      float64
+	color     color.Color
+	underline bool
 }
 
 func splitTextPreserveSpaces(s string) []string {
@@ -435,14 +521,42 @@ func splitTextPreserveSpaces(s string) []string {
 	return parts
 }
 
-func (c *canvas) drawTokens(tokens []textToken, left, right int) {
-	if len(tokens) == 0 {
+func (r *renderer) markerPositions(level int) (markerLeft, markerRight, contentLeft int) {
+	markerLeft = r.c.margin + level*listIndentStep
+	markerRight = markerLeft + listMarkerWidth
+	contentLeft = markerRight + listMarkerGap
+	return
+}
+
+func (r *renderer) drawListMarker(marker string, baseline int, markerLeft, markerRight int) {
+	font := r.c.fonts.Regular
+	if font == nil {
 		return
+	}
+	r.c.setFace(font, r.c.th.FG, r.baseSize)
+	width := measureWidth(font, r.baseSize, marker)
+	x := markerRight - int(width)
+	if x < markerLeft {
+		x = markerLeft
+	}
+	pt := freetype.Pt(x, baseline)
+	_, _ = r.c.dc.DrawString(marker, pt)
+}
+
+type lineMetric struct {
+	baseline int
+	height   int
+}
+
+func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
+	if len(tokens) == 0 {
+		return nil
 	}
 	maxWidth := float64(right - left)
 	var line []styledWord
 	var lineWidth float64
 	var lineMaxSize float64
+	var metrics []lineMetric
 
 	flush := func(force bool) {
 		if len(line) == 0 {
@@ -472,12 +586,22 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 			c.setFace(w.font, w.color, w.size)
 			pt := freetype.Pt(x, baseline)
 			_, _ = c.dc.DrawString(w.text, pt)
-			x += int(measureWidth(w.font, w.size, w.text))
+			width := int(measureWidth(w.font, w.size, w.text))
+			if w.underline && width > 0 {
+				underlineY := baseline + int(w.size*0.12)
+				if underlineY <= baseline {
+					underlineY = baseline + 1
+				}
+				rect := image.Rect(x, underlineY, x+width, underlineY+1)
+				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
+			}
+			x += width
 		}
 		lineHeight := int(baselineSize * 1.4)
 		if lineHeight <= 0 {
 			lineHeight = int(c.ptSize * 1.4)
 		}
+		metrics = append(metrics, lineMetric{baseline: baseline, height: lineHeight})
 		c.cursorY += lineHeight
 		line = line[:0]
 		lineWidth = 0
@@ -504,14 +628,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 				if len(line) == 0 {
 					continue
 				}
-				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
 				lineWidth += segWidth
 				continue
 			}
 			if lineWidth+segWidth > maxWidth && len(line) > 0 {
 				flush(false)
 			}
-			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
@@ -519,6 +643,236 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 		}
 	}
 	flush(false)
+	return metrics
+}
+
+func (r *renderer) renderList(list *ast.List, md []byte, level int) {
+	markerLeft, markerRight, contentLeft := r.markerPositions(level)
+	itemSpacing := int(r.baseSize * 0.6)
+	start := list.Start
+	if !list.IsOrdered() || start == 0 {
+		start = 1
+	}
+	index := 0
+	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
+		li, ok := item.(*ast.ListItem)
+		if !ok {
+			continue
+		}
+		marker := "•"
+		if list.IsOrdered() {
+			marker = fmt.Sprintf("%d%c", start+index, list.Marker)
+		}
+		r.renderListItem(li, md, level, marker, markerLeft, markerRight, contentLeft)
+		if item.NextSibling() != nil {
+			r.c.addVSpace(itemSpacing)
+		}
+		index++
+	}
+	r.c.addVSpace(int(r.baseSize * 0.7))
+}
+
+func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker string, markerLeft, markerRight, contentLeft int) {
+	startY := r.c.cursorY
+	markerDrawn := false
+	blockSpacing := int(r.baseSize * 0.5)
+
+	ensureMarker := func(baseline int) {
+		if markerDrawn {
+			return
+		}
+		r.drawListMarker(marker, baseline, markerLeft, markerRight)
+		markerDrawn = true
+	}
+
+	inlineBlock := func(node ast.Node) {
+		var tokens []textToken
+		r.collectInlineTokens(node, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+		if len(tokens) == 0 {
+			text := strings.TrimRight(string(node.Text(md)), "\n")
+			if text == "" {
+				return
+			}
+			tokens = []textToken{{text: text, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}
+		}
+		metrics := r.c.drawTokens(tokens, contentLeft, r.c.w-r.c.margin)
+		if len(metrics) > 0 {
+			ensureMarker(metrics[0].baseline)
+		} else {
+			ensureMarker(startY + int(r.baseSize))
+		}
+		if node.NextSibling() != nil {
+			r.c.addVSpace(blockSpacing)
+		}
+	}
+
+	for child := li.FirstChild(); child != nil; child = child.NextSibling() {
+		switch c := child.(type) {
+		case *ast.Paragraph:
+			inlineBlock(c)
+		case *ast.TextBlock:
+			inlineBlock(c)
+		case *ast.List:
+			ensureMarker(startY + int(r.baseSize))
+			r.c.addVSpace(int(r.baseSize * 0.3))
+			r.renderList(c, md, level+1)
+		case *ast.CodeBlock:
+			ensureMarker(startY + int(r.baseSize))
+			text := strings.TrimRight(string(c.Text(md)), "\n")
+			r.c.addVSpace(int(r.baseSize * 0.2))
+			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
+			if child.NextSibling() != nil {
+				r.c.addVSpace(blockSpacing)
+			}
+		case *ast.FencedCodeBlock:
+			ensureMarker(startY + int(r.baseSize))
+			text := strings.TrimRight(string(c.Text(md)), "\n")
+			r.c.addVSpace(int(r.baseSize * 0.2))
+			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
+			if child.NextSibling() != nil {
+				r.c.addVSpace(blockSpacing)
+			}
+		case *ast.Blockquote:
+			ensureMarker(startY + int(r.baseSize))
+			quoteStart := r.c.cursorY
+			var tokens []textToken
+			r.collectInlineTokens(c, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			if len(tokens) > 0 {
+				r.c.addVSpace(2)
+				_ = r.c.drawTokens(tokens, contentLeft+10, r.c.w-r.c.margin)
+				r.c.addVSpace(6)
+				r.c.drawBlockquoteBar(quoteStart+2, r.c.cursorY-quoteStart-2)
+			}
+			if child.NextSibling() != nil {
+				r.c.addVSpace(blockSpacing)
+			}
+		default:
+			// Ignore unsupported inline nodes; block handlers cover known types.
+		}
+	}
+
+	if !markerDrawn {
+		ensureMarker(startY + int(r.baseSize))
+	}
+}
+
+func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte) [][]textToken {
+	var cells [][]textToken
+	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tc, ok := cell.(*extensionAST.TableCell); ok {
+			var tokens []textToken
+			r.collectInlineTokens(tc, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			cells = append(cells, tokens)
+		}
+	}
+	return cells
+}
+
+func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
+	var rows [][][]textToken
+	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
+		switch n := node.(type) {
+		case *extensionAST.TableHeader:
+			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+				if tr, ok := child.(*extensionAST.TableRow); ok {
+					rows = append(rows, r.collectTableRow(tr, md))
+				}
+			}
+		case *extensionAST.TableRow:
+			rows = append(rows, r.collectTableRow(n, md))
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+	colCount := 0
+	for _, row := range rows {
+		if len(row) > colCount {
+			colCount = len(row)
+		}
+	}
+	if colCount == 0 {
+		return
+	}
+
+	border := 1
+	cellPadding := int(r.baseSize * 0.6)
+	if cellPadding < 8 {
+		cellPadding = 8
+	}
+	availableWidth := r.c.w - 2*r.c.margin
+	minWidth := colCount*40 + border*(colCount+1)
+	if availableWidth < minWidth {
+		availableWidth = minWidth
+	}
+	colWidth := (availableWidth - border*(colCount+1)) / colCount
+	if colWidth < 60 {
+		colWidth = 60
+	}
+	tableWidth := colCount*colWidth + border*(colCount+1)
+	if tableWidth > availableWidth {
+		tableWidth = availableWidth
+	}
+	tableLeft := r.c.margin
+	tableRight := tableLeft + tableWidth
+
+	borderColor := image.NewUniform(r.c.th.HRule)
+	r.c.addVSpace(int(r.baseSize * 0.3))
+	tableTop := r.c.cursorY
+	draw.Draw(r.c.img, image.Rect(tableLeft, tableTop, tableRight, tableTop+border), borderColor, image.Point{}, draw.Src)
+	y := tableTop + border
+
+	for _, row := range rows {
+		rowTop := y
+		maxCellHeight := 0
+		for col := 0; col < colCount; col++ {
+			cellLeft := tableLeft + border + col*(colWidth+border)
+			cellRight := cellLeft + colWidth
+			contentLeft := cellLeft + cellPadding
+			contentRight := cellRight - cellPadding
+			if contentRight <= contentLeft {
+				contentRight = cellRight - 2
+			}
+			start := rowTop + cellPadding
+			r.c.cursorY = start
+			var tokens []textToken
+			if col < len(row) {
+				tokens = row[col]
+			}
+			metrics := r.c.drawTokens(tokens, contentLeft, contentRight)
+			height := r.c.cursorY - start
+			if len(metrics) == 0 && len(tokens) == 0 {
+				height = int(r.baseSize * 1.1)
+			}
+			if height > maxCellHeight {
+				maxCellHeight = height
+			}
+			r.c.cursorY = start
+		}
+		if maxCellHeight < int(r.baseSize*1.1) {
+			maxCellHeight = int(r.baseSize * 1.1)
+		}
+		rowBottom := rowTop + maxCellHeight + 2*cellPadding
+		draw.Draw(r.c.img, image.Rect(tableLeft, rowBottom, tableRight, rowBottom+border), borderColor, image.Point{}, draw.Src)
+		y = rowBottom + border
+	}
+
+	tableBottom := y - border
+	for col := 0; col <= colCount; col++ {
+		x := tableLeft + col*(colWidth+border)
+		draw.Draw(r.c.img, image.Rect(x, tableTop, x+border, tableBottom+border), borderColor, image.Point{}, draw.Src)
+	}
+	r.c.cursorY = tableBottom + int(r.baseSize*0.7)
+}
+
+func (r *renderer) renderUnsupported(node ast.Node) {
+	if node.Type() != ast.TypeBlock {
+		return
+	}
+	msg := fmt.Sprintf("⚠ Unsupported: %s", node.Kind().String())
+	tokens := []textToken{{text: msg, font: r.c.fonts.Regular, size: r.baseSize * 0.9, color: warningColor}}
+	_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+	r.c.addVSpace(int(r.baseSize * 0.6))
 }
 
 func (r *renderer) render(md []byte) error {
@@ -549,34 +903,23 @@ func (r *renderer) render(md []byte) error {
 			}
 			var tokens []textToken
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, size, r.c.th.FG, &tokens)
-			r.c.addVSpace(8)
-			r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-			r.c.addVSpace(6)
+			r.c.addVSpace(int(r.baseSize * 0.75))
+			_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+			r.c.addVSpace(int(r.baseSize * 0.5))
 			return ast.WalkSkipChildren, nil
 		case *ast.Paragraph:
 			var tokens []textToken
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
 			if len(tokens) > 0 {
-				r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-				r.c.addVSpace(8)
+				_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+				r.c.addVSpace(int(r.baseSize * 0.9))
 			}
 			return ast.WalkSkipChildren, nil
 		case *ast.List:
-			// Render each item with bullet/number
-			for it := n.FirstChild(); it != nil; it = it.NextSibling() {
-				if li, ok := it.(*ast.ListItem); ok {
-					marker := "•"
-					if nd.IsOrdered() {
-						marker = "1."
-					} // naive numbering
-					var tokens []textToken
-					tokens = append(tokens, textToken{text: marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
-					r.collectInlineTokens(li, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
-					r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-					r.c.addVSpace(4)
-				}
-			}
-			r.c.addVSpace(6)
+			r.renderList(nd, md, 0)
+			return ast.WalkSkipChildren, nil
+		case *extensionAST.Table:
+			r.renderTable(nd, md)
 			return ast.WalkSkipChildren, nil
 		case *ast.CodeBlock, *ast.FencedCodeBlock:
 			text := strings.TrimRight(string(n.Text(md)), "\n")
@@ -589,7 +932,7 @@ func (r *renderer) render(md []byte) error {
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize*1.0, r.c.th.FG, &tokens)
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
-				r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)
+				_ = r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)
 				r.c.addVSpace(6)
 				r.c.drawBlockquoteBar(startY+2, r.c.cursorY-startY-2)
 			}
@@ -601,7 +944,14 @@ func (r *renderer) render(md []byte) error {
 			// Handled by parents (Paragraph/List/Heading)
 			return ast.WalkContinue, nil
 		default:
-			return ast.WalkContinue, nil
+			switch nd.(type) {
+			case *ast.Document, *ast.ListItem:
+				return ast.WalkContinue, nil
+			case *extensionAST.TableHeader, *extensionAST.TableRow, *extensionAST.TableCell:
+				return ast.WalkContinue, nil
+			}
+			r.renderUnsupported(nd)
+			return ast.WalkSkipChildren, nil
 		}
 	})
 }
