@@ -95,34 +95,36 @@ nfpms:
         dst: /usr/share/doc/md2png/README.md
         type: doc
 
-brews:
-  - name: md2png
-    commit_author:
-      name: Arran4 Automation
-      email: oss@arran4.com
-    tap:
-      owner: arran4
-      name: homebrew-tap
-    folder: Formula
-    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
-    homepage: 'https://github.com/arran4/md2png'
-    description: 'Render Markdown files to PNG or JPEG images without external runtimes.'
-    license: 'MIT'
-    test: |
-      system '#{bin}/md2png', '-help'
-    caveats: |
-      md2png renders Markdown straight to images. Pass `-in` and `-out` flags
-      to convert files, or read from stdin when `-in` is omitted.
+# The Homebrew and Scoop configurations relied on deprecated fields and are disabled until
+# a new tap/bucket repository is available. See https://goreleaser.com/deprecations/ for details.
+#brews:
+#  - name: md2png
+#    commit_author:
+#      name: Arran4 Automation
+#      email: oss@arran4.com
+#    tap:
+#      owner: arran4
+#      name: homebrew-tap
+#    folder: Formula
+#    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
+#    homepage: 'https://github.com/arran4/md2png'
+#    description: 'Render Markdown files to PNG or JPEG images without external runtimes.'
+#    license: 'MIT'
+#    test: |
+#      system '#{bin}/md2png', '-help'
+#    caveats: |
+#      md2png renders Markdown straight to images. Pass `-in` and `-out` flags
+#      to convert files, or read from stdin when `-in` is omitted.
 
-scoops:
-  - name: md2png
-    bucket:
-      owner: arran4
-      name: scoop-bucket
-    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
-    description: 'Render Markdown to PNG/JPG with a single static Go binary.'
-    homepage: 'https://github.com/arran4/md2png'
-    license: MIT
+#scoops:
+#  - name: md2png
+#    bucket:
+#      owner: arran4
+#      name: scoop-bucket
+#    url_template: 'https://github.com/arran4/md2png/releases/download/{{ .Tag }}/{{ .ArtifactName }}'
+#    description: 'Render Markdown to PNG/JPG with a single static Go binary.'
+#    homepage: 'https://github.com/arran4/md2png'
+#    license: MIT
 
 changelog:
   use: github
