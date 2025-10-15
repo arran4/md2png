@@ -139,11 +139,11 @@ func main() {
 
 ## 🧩 Output Example
 
-**Light Theme**
+**Light Theme** · [Download PNG](examples/light-example.png)
 
 ![Light example](examples/light-example.png)
 
-**Dark Theme**
+**Dark Theme** · [Download PNG](examples/dark-example.png)
 
 ![Dark example](examples/dark-example.png)
 
