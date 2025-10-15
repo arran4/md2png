@@ -12,6 +12,10 @@ jobs:
   generate-preview:
     name: Generate README preview
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
