@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
@@ -386,6 +387,38 @@ type styledWord struct {
 	color color.Color
 }
 
+func splitTextPreserveSpaces(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var parts []string
+	var current strings.Builder
+	lastType := 0 // 0 unknown, 1 space, 2 non-space
+	for _, r := range s {
+		typ := 2
+		if unicode.IsSpace(r) {
+			typ = 1
+		}
+		if lastType == 0 {
+			current.WriteRune(r)
+			lastType = typ
+			continue
+		}
+		if typ == lastType {
+			current.WriteRune(r)
+			continue
+		}
+		parts = append(parts, current.String())
+		current.Reset()
+		current.WriteRune(r)
+		lastType = typ
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
+}
+
 func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 	if len(tokens) == 0 {
 		return
@@ -416,13 +449,9 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 		}
 		baseline := c.cursorY + int(baselineSize)
 		x := left
-		for i, w := range line {
+		for _, w := range line {
 			if w.font == nil {
 				w.font = c.fonts.Regular
-			}
-			if i > 0 {
-				spaceWidth := measureWidth(line[i-1].font, " ")
-				x += int(spaceWidth)
 			}
 			c.setFace(w.font, w.color, w.size)
 			pt := freetype.Pt(x, baseline)
@@ -448,24 +477,29 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 		if font == nil {
 			font = c.fonts.Regular
 		}
-		words := strings.Fields(tok.text)
-		for _, w := range words {
-			wordWidth := measureWidth(font, w)
-			extra := 0.0
-			if len(line) > 0 {
-				extra = measureWidth(line[len(line)-1].font, " ")
+		segments := splitTextPreserveSpaces(tok.text)
+		for _, seg := range segments {
+			if seg == "" {
+				continue
 			}
-			if lineWidth+extra+wordWidth > maxWidth && len(line) > 0 {
+			isSpace := unicode.IsSpace([]rune(seg)[0])
+			segWidth := measureWidth(font, seg)
+			if isSpace {
+				if len(line) == 0 {
+					continue
+				}
+				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+				lineWidth += segWidth
+				continue
+			}
+			if lineWidth+segWidth > maxWidth && len(line) > 0 {
 				flush(false)
 			}
-			if len(line) > 0 {
-				lineWidth += extra
-			}
-			line = append(line, styledWord{text: w, font: font, size: tok.size, color: tok.color})
+			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
-			lineWidth += wordWidth
+			lineWidth += segWidth
 		}
 	}
 	flush(false)
