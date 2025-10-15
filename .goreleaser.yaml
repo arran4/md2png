@@ -9,7 +9,7 @@ before:
     - go test ./...
     # Render the README to a PNG so releases can ship the up-to-date output.
     - mkdir -p dist
-    - go run ./cmd/md2png -in README.md -out dist/README.png
+    - go run ./cmd/md2png -in README.md -out readme.png
 
 builds:
   - id: md2png
@@ -56,8 +56,6 @@ archives:
     files:
       - README.md
       - readme.png
-      - src: dist/README.png
-        dst: README.png
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{- if eq .Os "darwin" }}macOS{{ else if eq .Os "linux" }}Linux{{ else if eq .Os "windows" }}Windows{{ else }}{{ title .Os }}{{ end }}_{{- if eq .Arch "386" }}i386{{ else if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}{{- with .Arm }}v{{ . }}{{ end }}'
 
 checksum:
@@ -146,7 +144,7 @@ release:
     owner: arran4
     name: md2png
   extra_files:
-    - glob: dist/README.png
+    - glob: readme.png
   draft: false
   prerelease: auto
   footer: |
