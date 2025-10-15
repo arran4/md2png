@@ -1,0 +1,68 @@
+name: Update example images
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  render-and-pr:
+    name: Render example images
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Render light theme example
+        run: |
+          mkdir -p examples
+          go run ./cmd/md2png -in testdata/all_features.md -out examples/light-example.png -theme light
+
+      - name: Render dark theme example
+        run: |
+          go run ./cmd/md2png -in testdata/all_features.md -out examples/dark-example.png -theme dark
+
+      - name: Detect example changes
+        id: diff
+        run: |
+          changed="$(git status --short -- examples/light-example.png examples/dark-example.png)"
+          if [ -n "$changed" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create update pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Update example images"
+          title: "Update example images for #${{ github.event.pull_request.number }}"
+          body: |
+            Automated example image update for PR #${{ github.event.pull_request.number }}.
+            This PR refreshes the light and dark theme example renders so they match the latest Markdown changes.
+          branch: bot/update-examples/${{ github.head_ref }}
+          base: ${{ github.head_ref }}
+          add-paths: |
+            examples/light-example.png
+            examples/dark-example.png
+          delete-branch: true
