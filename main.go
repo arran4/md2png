@@ -505,7 +505,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 				continue
 			}
 			isSpace := unicode.IsSpace([]rune(seg)[0])
-			segWidth := measureWidth(font, tok.size, seg)
+			segWidth := measureWidth(font, seg)
 			if isSpace {
 				if len(line) == 0 {
 					continue
