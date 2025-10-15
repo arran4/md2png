@@ -13,7 +13,7 @@ before:
 
 builds:
   - id: md2png
-    main: .
+    main: ./cmd/md2png
     binary: md2png
     gobinary: go
     env:
