@@ -14,11 +14,12 @@ It’s designed for developers who want a **self-contained binary** that can ren
     - Headings (H1–H5)
     - Paragraphs
     - Lists (ordered/unordered)
+    - **Inline bold text**
     - Code blocks (monospaced background)
     - Blockquotes (with left accent bar)
     - Horizontal rules (`---`, `***`)
 - **Light & Dark themes**
-- **Custom fonts** (`--font` and `--fontmono`)
+- **Custom fonts** (`--font`, `--fontbold`, and `--fontmono`)
 - **Adjustable width, margins, and font size**
 - **Outputs PNG or JPG** depending on file extension
 
@@ -65,6 +66,7 @@ No external tools required — just Go ≥1.22.
 | `-pt` | Base font size (points) | 16 |
 | `-theme` | Theme: `light` or `dark` | `light` |
 | `-font` | Regular font (TTF path) | built-in Go Regular |
+| `-fontbold` | Bold font (TTF path) | built-in Go Bold |
 | `-fontmono` | Monospace font (TTF path) | built-in Go Mono |
 
 ---

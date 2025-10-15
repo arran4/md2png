@@ -23,6 +23,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -74,11 +75,13 @@ type FontAndFace struct {
 
 type Fonts struct {
 	Regular *FontAndFace
+	Bold    *FontAndFace
 	Mono    *FontAndFace
 }
 
 type FontConfig struct {
 	RegularPath string
+	BoldPath    string
 	MonoPath    string
 	SizeBase    float64 // paragraph font size in pt
 }
@@ -111,6 +114,22 @@ func loadFonts(cfg FontConfig) (Fonts, error) {
 		}
 	} else {
 		f.Regular, err = loadFontAndFace(goregular.TTF, cfg.SizeBase)
+		if err != nil {
+			return f, err
+		}
+	}
+	// Bold
+	if cfg.BoldPath != "" {
+		b, e := os.ReadFile(cfg.BoldPath)
+		if e != nil {
+			return f, e
+		}
+		f.Bold, err = loadFontAndFace(b, cfg.SizeBase)
+		if err != nil {
+			return f, err
+		}
+	} else {
+		f.Bold, err = loadFontAndFace(gobold.TTF, cfg.SizeBase)
 		if err != nil {
 			return f, err
 		}
@@ -302,6 +321,156 @@ type renderer struct {
 	baseSize float64
 }
 
+type textToken struct {
+	text    string
+	font    *FontAndFace
+	size    float64
+	color   color.Color
+	newline bool
+}
+
+func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
+	if font == nil {
+		font = r.c.fonts.Regular
+	}
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch c := child.(type) {
+		case *ast.Text:
+			text := string(c.Segment.Value(md))
+			if text != "" {
+				parts := strings.Split(text, "\n")
+				for i, part := range parts {
+					if part != "" {
+						*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+					}
+					if i < len(parts)-1 {
+						*out = append(*out, textToken{newline: true})
+					}
+				}
+			}
+			if c.SoftLineBreak() || c.HardLineBreak() {
+				*out = append(*out, textToken{newline: true})
+			}
+		case *ast.Paragraph:
+			r.collectInlineTokens(c, md, font, size, color, out)
+			if child.NextSibling() != nil {
+				*out = append(*out, textToken{newline: true})
+			}
+		case *ast.Emphasis:
+			nextFont := font
+			if c.Level >= 2 && r.c.fonts.Bold != nil {
+				nextFont = r.c.fonts.Bold
+			}
+			r.collectInlineTokens(c, md, nextFont, size, color, out)
+		case *ast.CodeSpan:
+			mono := r.c.fonts.Mono
+			if mono == nil {
+				mono = font
+			}
+			txt := string(c.Text(md))
+			if txt != "" {
+				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
+			}
+		default:
+			if child.HasChildren() {
+				r.collectInlineTokens(child, md, font, size, color, out)
+			}
+		}
+	}
+}
+
+type styledWord struct {
+	text  string
+	font  *FontAndFace
+	size  float64
+	color color.Color
+}
+
+func (c *canvas) drawTokens(tokens []textToken, left, right int) {
+	if len(tokens) == 0 {
+		return
+	}
+	maxWidth := float64(right - left)
+	var line []styledWord
+	var lineWidth float64
+	var lineMaxSize float64
+
+	flush := func(force bool) {
+		if len(line) == 0 {
+			if force {
+				heightSize := lineMaxSize
+				if heightSize == 0 {
+					heightSize = c.ptSize
+				}
+				height := int(heightSize * 1.4)
+				if height == 0 {
+					height = int(c.ptSize * 1.4)
+				}
+				c.cursorY += height
+			}
+			return
+		}
+		baselineSize := lineMaxSize
+		if baselineSize == 0 {
+			baselineSize = c.ptSize
+		}
+		baseline := c.cursorY + int(baselineSize)
+		x := left
+		for i, w := range line {
+			if w.font == nil {
+				w.font = c.fonts.Regular
+			}
+			if i > 0 {
+				spaceWidth := measureWidth(line[i-1].font, " ")
+				x += int(spaceWidth)
+			}
+			c.setFace(w.font, w.color, w.size)
+			pt := freetype.Pt(x, baseline)
+			_, _ = c.dc.DrawString(w.text, pt)
+			x += int(measureWidth(w.font, w.text))
+		}
+		lineHeight := int(baselineSize * 1.4)
+		if lineHeight <= 0 {
+			lineHeight = int(c.ptSize * 1.4)
+		}
+		c.cursorY += lineHeight
+		line = line[:0]
+		lineWidth = 0
+		lineMaxSize = 0
+	}
+
+	for _, tok := range tokens {
+		if tok.newline {
+			flush(true)
+			continue
+		}
+		font := tok.font
+		if font == nil {
+			font = c.fonts.Regular
+		}
+		words := strings.Fields(tok.text)
+		for _, w := range words {
+			wordWidth := measureWidth(font, w)
+			extra := 0.0
+			if len(line) > 0 {
+				extra = measureWidth(line[len(line)-1].font, " ")
+			}
+			if lineWidth+extra+wordWidth > maxWidth && len(line) > 0 {
+				flush(false)
+			}
+			if len(line) > 0 {
+				lineWidth += extra
+			}
+			line = append(line, styledWord{text: w, font: font, size: tok.size, color: tok.color})
+			if tok.size > lineMaxSize {
+				lineMaxSize = tok.size
+			}
+			lineWidth += wordWidth
+		}
+	}
+	flush(false)
+}
+
 func (r *renderer) render(md []byte) error {
 	mdParser := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
@@ -328,15 +497,17 @@ func (r *renderer) render(md []byte) error {
 			default:
 				size = r.baseSize * 1.15
 			}
-			text := strings.TrimSpace(string(n.Text(md)))
+			var tokens []textToken
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, size, r.c.th.FG, &tokens)
 			r.c.addVSpace(8)
-			r.c.drawTextWrapped(r.c.fonts.Regular, r.c.th.FG, size, text, r.c.margin, r.c.w-r.c.margin)
+			r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
 			r.c.addVSpace(6)
 			return ast.WalkSkipChildren, nil
 		case *ast.Paragraph:
-			text := strings.TrimSpace(string(n.Text(md)))
-			if text != "" {
-				r.c.drawTextWrapped(r.c.fonts.Regular, r.c.th.FG, r.baseSize, text, r.c.margin, r.c.w-r.c.margin)
+			var tokens []textToken
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			if len(tokens) > 0 {
+				r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
 				r.c.addVSpace(8)
 			}
 			return ast.WalkSkipChildren, nil
@@ -344,16 +515,15 @@ func (r *renderer) render(md []byte) error {
 			// Render each item with bullet/number
 			for it := n.FirstChild(); it != nil; it = it.NextSibling() {
 				if li, ok := it.(*ast.ListItem); ok {
-					marker := "• "
+					marker := "•"
 					if nd.IsOrdered() {
-						marker = "1. "
+						marker = "1."
 					} // naive numbering
-					content := strings.TrimSpace(string(li.Text(md)))
-					if content != "" {
-						// draw marker
-						r.c.drawTextWrapped(r.c.fonts.Regular, r.c.th.FG, r.baseSize, marker+content, r.c.margin, r.c.w-r.c.margin)
-						r.c.addVSpace(4)
-					}
+					var tokens []textToken
+					tokens = append(tokens, textToken{text: marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+					r.collectInlineTokens(li, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+					r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+					r.c.addVSpace(4)
 				}
 			}
 			r.c.addVSpace(6)
@@ -365,10 +535,11 @@ func (r *renderer) render(md []byte) error {
 			return ast.WalkSkipChildren, nil
 		case *ast.Blockquote:
 			startY := r.c.cursorY
-			inner := strings.TrimSpace(string(n.Text(md)))
-			if inner != "" {
+			var tokens []textToken
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize*1.0, r.c.th.FG, &tokens)
+			if len(tokens) > 0 {
 				r.c.addVSpace(2)
-				r.c.drawTextWrapped(r.c.fonts.Regular, r.c.th.FG, r.baseSize*1.0, inner, r.c.margin+10, r.c.w-r.c.margin)
+				r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)
 				r.c.addVSpace(6)
 				r.c.drawBlockquoteBar(startY+2, r.c.cursorY-startY-2)
 			}
@@ -412,6 +583,7 @@ func main() {
 	pt := flag.Float64("pt", 16, "Base font size in points (paragraph)")
 	theme := flag.String("theme", "light", "Theme: light|dark")
 	fontRegular := flag.String("font", "", "Path to TTF for regular text (optional; default Go RegularFace)")
+	fontBold := flag.String("fontbold", "", "Path to TTF for bold text (optional; default Go Bold)")
 	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
 	flag.Parse()
 
@@ -420,7 +592,7 @@ func main() {
 		fatal(err)
 	}
 
-	fc := FontConfig{RegularPath: *fontRegular, MonoPath: *fontMono, SizeBase: *pt}
+	fc := FontConfig{RegularPath: *fontRegular, BoldPath: *fontBold, MonoPath: *fontMono, SizeBase: *pt}
 	fonts, err := loadFonts(fc)
 	if err != nil {
 		fatal(err)
