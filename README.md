@@ -1,6 +1,6 @@
-# md2img – Markdown to Image (Go CLI)
+# md2png – Markdown to Image (Go CLI & Library)
 
-`md2img` is a **pure Go command-line tool** that converts Markdown files directly into **PNG** or **JPG** images — no JavaScript, no Python, no scripting runtimes required.
+`md2png` is a **pure Go toolkit** that converts Markdown files directly into **PNG** or **JPG** images — no JavaScript, no Python, no scripting runtimes required. Use the bundled CLI or import it as a library in your own Go projects.
 
 It’s designed for developers who want a **self-contained binary** that can render Markdown into readable, styled images for documentation, blog headers, code snippets, or social previews.
 
@@ -30,9 +30,9 @@ It’s designed for developers who want a **self-contained binary** that can ren
 ### Clone & Build
 
 ```bash
-git clone https://github.com/arran4/md2img.git
-cd md2img
-go build -o md2img
+git clone https://github.com/arran4/md2png.git
+cd md2png
+go build ./cmd/md2png
 ```
 
 ### Dependencies
@@ -52,7 +52,7 @@ No external tools required — just Go ≥1.22.
 ## 🚀 Usage
 
 ```bash
-./md2img -in README.md -out out.png
+./md2png -in README.md -out out.png
 ```
 
 ### Options
@@ -76,19 +76,19 @@ No external tools required — just Go ≥1.22.
 Render a Markdown file to PNG:
 
 ```bash
-./md2img -in example.md -out example.png
+./md2png -in example.md -out example.png
 ```
 
 Dark theme with larger font and wider layout:
 
 ```bash
-./md2img -in blogpost.md -out post.png -theme dark -width 1400 -pt 18
+./md2png -in blogpost.md -out post.png -theme dark -width 1400 -pt 18
 ```
 
 Using your own fonts:
 
 ```bash
-./md2img -in notes.md -out notes.jpg \
+./md2png -in notes.md -out notes.jpg \
   -font /usr/share/fonts/TTF/DejaVuSans.ttf \
   -fontmono /usr/share/fonts/TTF/DejaVuSansMono.ttf
 ```
@@ -96,8 +96,44 @@ Using your own fonts:
 Pipe Markdown directly:
 
 ```bash
-echo "# Hello\nThis came from stdin!" | ./md2img -out hello.png
+echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
 ```
+
+---
+
+## 📦 Library Usage
+
+Import `github.com/arran4/md2png` to render Markdown from your own Go code:
+
+```go
+package main
+
+import (
+        "image/png"
+        "os"
+
+        "github.com/arran4/md2png"
+)
+
+func main() {
+        img, err := md2png.Render([]byte("# Hello\nRendered inside Go!"), md2png.RenderOptions{})
+        if err != nil {
+                panic(err)
+        }
+
+        f, err := os.Create("hello.png")
+        if err != nil {
+                panic(err)
+        }
+        defer f.Close()
+
+        if err := png.Encode(f, img); err != nil {
+                panic(err)
+        }
+}
+```
+
+`RenderOptions` accepts custom dimensions, themes, and fonts. To load your own TTFs, call `md2png.LoadFonts` and pass the result to `RenderOptions.Fonts`.
 
 ---
 

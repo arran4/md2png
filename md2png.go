@@ -1,18 +1,12 @@
-package main
+package md2png
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
-	"flag"
 	"image"
 	"image/color"
 	"image/draw"
-	"image/jpeg"
-	"image/png"
-	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -612,15 +606,16 @@ func (r *renderer) render(md []byte) error {
 	})
 }
 
-// ---- I/O & main ----
+// ---- Library entry points ----
 
-func readAll(r io.Reader) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	_, err := buf.ReadFrom(r)
-	return buf.Bytes(), err
-}
+// LightTheme and DarkTheme expose the built-in themes for convenience.
+var (
+	LightTheme = lightTheme
+	DarkTheme  = darkTheme
+)
 
-func chooseTheme(name string) (Theme, error) {
+// ThemeByName returns a built-in theme by name ("light" or "dark").
+func ThemeByName(name string) (Theme, error) {
 	switch strings.ToLower(name) {
 	case "light", "":
 		return lightTheme, nil
@@ -631,85 +626,71 @@ func chooseTheme(name string) (Theme, error) {
 	}
 }
 
-func main() {
-	in := flag.String("in", "", "Input Markdown file (default: stdin if empty)")
-	out := flag.String("out", "out.png", "Output image file (.png or .jpg)")
-	width := flag.Int("width", 1024, "Output image width in pixels")
-	margin := flag.Int("margin", 48, "Margin in pixels")
-	pt := flag.Float64("pt", 16, "Base font size in points (paragraph)")
-	theme := flag.String("theme", "light", "Theme: light|dark")
-	fontRegular := flag.String("font", "", "Path to TTF for regular text (optional; default Go RegularFace)")
-	fontBold := flag.String("fontbold", "", "Path to TTF for bold text (optional; default Go Bold)")
-	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
-	flag.Parse()
+// LoadFonts returns a Fonts set using the provided FontConfig. When no
+// custom paths are supplied it falls back to Go's bundled fonts.
+func LoadFonts(cfg FontConfig) (Fonts, error) {
+	return loadFonts(cfg)
+}
 
-	th, err := chooseTheme(*theme)
-	if err != nil {
-		fatal(err)
+// RenderOptions configure how Markdown is rendered to an image.
+type RenderOptions struct {
+	Width        int
+	Margin       int
+	BaseFontSize float64
+	Theme        Theme
+	Fonts        Fonts
+}
+
+// Render converts the provided Markdown document into a raster image using the
+// supplied options. Zero values enable sensible defaults (1024px width,
+// 48px margin, 16pt base font, light theme, bundled fonts).
+func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
+	if opts.Width <= 0 {
+		opts.Width = 1024
+	}
+	if opts.Margin <= 0 {
+		opts.Margin = 48
+	}
+	if opts.BaseFontSize <= 0 {
+		opts.BaseFontSize = 16
+	}
+	if (opts.Theme == Theme{}) {
+		opts.Theme = lightTheme
 	}
 
-	fc := FontConfig{RegularPath: *fontRegular, BoldPath: *fontBold, MonoPath: *fontMono, SizeBase: *pt}
-	fonts, err := loadFonts(fc)
-	if err != nil {
-		fatal(err)
-	}
-
-	var data []byte
-	if *in == "" {
-		data, err = readAll(os.Stdin)
-	} else {
-		f, e := os.Open(*in)
-		if e != nil {
-			fatal(e)
+	// Fill in missing fonts using the bundled defaults.
+	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
+		fallback, err := LoadFonts(FontConfig{SizeBase: opts.BaseFontSize})
+		if err != nil {
+			return nil, err
 		}
-		defer f.Close()
-		data, err = readAll(f)
-	}
-	if err != nil {
-		fatal(err)
+		if opts.Fonts.Regular == nil {
+			opts.Fonts.Regular = fallback.Regular
+		}
+		if opts.Fonts.Bold == nil {
+			opts.Fonts.Bold = fallback.Bold
+		}
+		if opts.Fonts.Mono == nil {
+			opts.Fonts.Mono = fallback.Mono
+		}
 	}
 
-	c := newCanvas(*width, *margin, th, fonts, *pt)
-	r := &renderer{c: c, baseSize: *pt}
+	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
+		return nil, errors.New("md2png: incomplete font configuration")
+	}
+
+	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize)
+	r := &renderer{c: c, baseSize: opts.BaseFontSize}
 	if err := r.render(data); err != nil {
-		fatal(err)
+		return nil, err
 	}
 
-	// Crop to used height
-	used := c.cursorY + *margin
-	if used < *margin+50 {
-		used = *margin + 50
+	used := c.cursorY + opts.Margin
+	if used < opts.Margin+50 {
+		used = opts.Margin + 50
 	}
-	crop := image.NewRGBA(image.Rect(0, 0, *width, used))
-	draw.Draw(crop, crop.Bounds(), c.img, image.Point{}, draw.Src)
 
-	// Encode
-	ext := strings.ToLower(filepath.Ext(*out))
-	var w io.Writer = mustCreate(*out)
-	defer func() { _ = w.(io.WriteCloser).Close() }()
-	switch ext {
-	case ".png":
-		if err := png.Encode(w, crop); err != nil {
-			fatal(err)
-		}
-	case ".jpg", ".jpeg":
-		if err := jpeg.Encode(w, crop, &jpeg.Options{Quality: 92}); err != nil {
-			fatal(err)
-		}
-	default:
-		fatal(errors.New("unsupported output extension: " + ext))
-	}
-}
-
-func mustCreate(p string) io.WriteCloser {
-	f, err := os.Create(p)
-	if err != nil {
-		fatal(err)
-	}
-	return f
-}
-
-func fatal(err error) {
-	_, _ = os.Stderr.WriteString("md2img: " + err.Error() + "\n")
-	os.Exit(1)
+	img := image.NewRGBA(image.Rect(0, 0, opts.Width, used))
+	draw.Draw(img, img.Bounds(), c.img, image.Point{}, draw.Src)
+	return img, nil
 }
