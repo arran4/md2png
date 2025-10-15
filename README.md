@@ -166,7 +166,7 @@ All rendering happens in memory — no HTML or external conversion.
 ## 🧠 Roadmap
 
 - [x] Tables
-- [ ] Inline images
+- [x] Inline images
 - [ ] Syntax highlighting
 - [ ] SVG output
 - [ ] Configurable themes via YAML/JSON
