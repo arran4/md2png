@@ -87,3 +87,81 @@ func TestRenderListInlineFormatting(t *testing.T) {
 		t.Fatalf("expected rendered list item to include link styling pixel")
 	}
 }
+
+func TestRendererFootnoteCollection(t *testing.T) {
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+	if err != nil {
+		t.Fatalf("load fonts: %v", err)
+	}
+	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	r := &renderer{
+		c:              c,
+		baseSize:       16,
+		linkFootnotes:  true,
+		imageFootnotes: true,
+	}
+	markdown := []byte("First [link](https://example.com) and second [same](https://example.com) ![img](https://example.com/image.png)")
+	if err := r.render(markdown); err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if len(r.footnotes) != 2 {
+		t.Fatalf("expected two unique footnotes, got %d", len(r.footnotes))
+	}
+	if idx := r.footnoteIndex["https://example.com"]; idx != 1 {
+		t.Fatalf("expected shared link footnote to keep first index, got %d", idx)
+	}
+}
+
+func TestRendererFootnoteToggles(t *testing.T) {
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+	if err != nil {
+		t.Fatalf("load fonts: %v", err)
+	}
+	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	r := &renderer{
+		c:              c,
+		baseSize:       16,
+		linkFootnotes:  false,
+		imageFootnotes: true,
+	}
+	markdown := []byte("[link](https://example.com) ![img](https://example.com/image.png)")
+	if err := r.render(markdown); err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if len(r.footnotes) != 1 {
+		t.Fatalf("expected only image footnote when link footnotes disabled, got %d", len(r.footnotes))
+	}
+	if _, ok := r.footnoteIndex["https://example.com"]; ok {
+		t.Fatalf("did not expect plain link footnote when disabled")
+	}
+}
+
+func TestRenderFootnoteDefaults(t *testing.T) {
+	markdown := "Paragraph with a [link](https://example.com)."
+	imgWith, err := Render([]byte(markdown), RenderOptions{})
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	disable := false
+	imgWithout, err := Render([]byte(markdown), RenderOptions{LinkFootnotes: &disable})
+	if err != nil {
+		t.Fatalf("render without footnotes failed: %v", err)
+	}
+	if imgWith.Bounds().Dy() <= imgWithout.Bounds().Dy() {
+		t.Fatalf("expected default link footnotes to increase image height")
+	}
+
+	markdownImage := "![alt](https://example.com/image.png)"
+	imgDefault, err := Render([]byte(markdownImage), RenderOptions{})
+	if err != nil {
+		t.Fatalf("render default image failed: %v", err)
+	}
+	enable := true
+	imgWithImages, err := Render([]byte(markdownImage), RenderOptions{ImageFootnotes: &enable})
+	if err != nil {
+		t.Fatalf("render with image footnotes failed: %v", err)
+	}
+	if imgWithImages.Bounds().Dy() <= imgDefault.Bounds().Dy() {
+		t.Fatalf("expected enabling image footnotes to increase image height")
+	}
+}

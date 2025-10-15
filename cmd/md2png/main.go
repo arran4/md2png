@@ -23,6 +23,8 @@ func main() {
 	fontRegular := flag.String("font", "", "Path to TTF for regular text (optional; default Go Regular)")
 	fontBold := flag.String("fontbold", "", "Path to TTF for bold text (optional; default Go Bold)")
 	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
+	footnoteLinks := flag.Bool("footnote-links", true, "Add footnotes for link destinations")
+	footnoteImages := flag.Bool("footnote-images", false, "Add footnotes for image destinations")
 	flag.Parse()
 
 	th, err := md2png.ThemeByName(*theme)
@@ -57,11 +59,13 @@ func main() {
 	}
 
 	img, err := md2png.Render(data, md2png.RenderOptions{
-		Width:        *width,
-		Margin:       *margin,
-		BaseFontSize: *pt,
-		Theme:        th,
-		Fonts:        fonts,
+		Width:          *width,
+		Margin:         *margin,
+		BaseFontSize:   *pt,
+		Theme:          th,
+		Fonts:          fonts,
+		LinkFootnotes:  footnoteLinks,
+		ImageFootnotes: footnoteImages,
 	})
 	if err != nil {
 		fatal(err)

@@ -397,8 +397,12 @@ func breakLongToken(ff *FontAndFace, size float64, token string, maxWidth float6
 // ---- Markdown -> draw ----
 
 type renderer struct {
-	c        *canvas
-	baseSize float64
+	c              *canvas
+	baseSize       float64
+	linkFootnotes  bool
+	imageFootnotes bool
+	footnoteIndex  map[string]int
+	footnotes      []string
 }
 
 const (
@@ -414,6 +418,41 @@ type textToken struct {
 	color     color.Color
 	underline bool
 	newline   bool
+}
+
+func (r *renderer) ensureFootnote(raw string) int {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	if r.footnoteIndex == nil {
+		r.footnoteIndex = make(map[string]int)
+	}
+	if idx, ok := r.footnoteIndex[raw]; ok {
+		return idx
+	}
+	idx := len(r.footnotes) + 1
+	r.footnoteIndex[raw] = idx
+	r.footnotes = append(r.footnotes, raw)
+	return idx
+}
+
+func (r *renderer) appendFootnoteMarker(out *[]textToken, size float64, index int) {
+	if out == nil || index <= 0 {
+		return
+	}
+	markerSize := size * 0.75
+	if markerSize <= 0 {
+		markerSize = r.baseSize * 0.75
+	}
+	if markerSize <= 0 {
+		markerSize = r.baseSize
+	}
+	*out = append(*out, textToken{
+		text:  fmt.Sprintf("[%d]", index),
+		font:  r.c.fonts.Regular,
+		size:  markerSize,
+		color: r.c.th.FG,
+	})
 }
 
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
@@ -445,6 +484,10 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				(*out)[i].color = linkColor
 				(*out)[i].underline = true
 			}
+			if r.linkFootnotes {
+				idx := r.ensureFootnote(string(c.Destination))
+				r.appendFootnoteMarker(out, size, idx)
+			}
 		case *ast.AutoLink:
 			label := string(c.Label(md))
 			if label == "" {
@@ -452,6 +495,18 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 			if label != "" {
 				*out = append(*out, textToken{text: label, font: font, size: size, color: linkColor, underline: true})
+			}
+			if r.linkFootnotes {
+				idx := r.ensureFootnote(string(c.URL(md)))
+				r.appendFootnoteMarker(out, size, idx)
+			}
+		case *ast.Image:
+			if child.HasChildren() {
+				r.collectInlineTokens(c, md, font, size, color, out)
+			}
+			if r.imageFootnotes {
+				idx := r.ensureFootnote(string(c.Destination))
+				r.appendFootnoteMarker(out, size, idx)
 			}
 		case *ast.Paragraph:
 			r.collectInlineTokens(c, md, font, size, color, out)
@@ -875,13 +930,29 @@ func (r *renderer) renderUnsupported(node ast.Node) {
 	r.c.addVSpace(int(r.baseSize * 0.6))
 }
 
+func (r *renderer) drawFootnotes() {
+	if len(r.footnotes) == 0 {
+		return
+	}
+	r.c.addVSpace(int(r.baseSize * 0.4))
+	noteSize := r.baseSize * 0.85
+	if noteSize <= 0 {
+		noteSize = r.baseSize
+	}
+	for i, note := range r.footnotes {
+		label := fmt.Sprintf("[%d] %s", i+1, note)
+		tokens := []textToken{{text: label, font: r.c.fonts.Regular, size: noteSize, color: r.c.th.FG}}
+		_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+	}
+}
+
 func (r *renderer) render(md []byte) error {
 	mdParser := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(md))
-	return ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	if err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
@@ -953,7 +1024,11 @@ func (r *renderer) render(md []byte) error {
 			r.renderUnsupported(nd)
 			return ast.WalkSkipChildren, nil
 		}
-	})
+	}); err != nil {
+		return err
+	}
+	r.drawFootnotes()
+	return nil
 }
 
 // ---- Library entry points ----
@@ -984,11 +1059,13 @@ func LoadFonts(cfg FontConfig) (Fonts, error) {
 
 // RenderOptions configure how Markdown is rendered to an image.
 type RenderOptions struct {
-	Width        int
-	Margin       int
-	BaseFontSize float64
-	Theme        Theme
-	Fonts        Fonts
+	Width          int
+	Margin         int
+	BaseFontSize   float64
+	Theme          Theme
+	Fonts          Fonts
+	LinkFootnotes  *bool
+	ImageFootnotes *bool
 }
 
 // Render converts the provided Markdown document into a raster image using the
@@ -1029,8 +1106,22 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 		return nil, errors.New("md2png: incomplete font configuration")
 	}
 
+	linkFootnotes := true
+	if opts.LinkFootnotes != nil {
+		linkFootnotes = *opts.LinkFootnotes
+	}
+	imageFootnotes := false
+	if opts.ImageFootnotes != nil {
+		imageFootnotes = *opts.ImageFootnotes
+	}
+
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize)
-	r := &renderer{c: c, baseSize: opts.BaseFontSize}
+	r := &renderer{
+		c:              c,
+		baseSize:       opts.BaseFontSize,
+		linkFootnotes:  linkFootnotes,
+		imageFootnotes: imageFootnotes,
+	}
 	if err := r.render(data); err != nil {
 		return nil, err
 	}
