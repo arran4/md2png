@@ -7,8 +7,14 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/golang/freetype"
@@ -19,6 +25,7 @@ import (
 	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gomono"
@@ -305,6 +312,27 @@ func (c *canvas) drawCodeBlock(text string, left, right int, size float64) {
 	c.cursorY = top + height + 6
 }
 
+func scaleImageToWidth(img image.Image, maxWidth int) image.Image {
+	if img == nil {
+		return nil
+	}
+	if maxWidth <= 0 {
+		return img
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() <= maxWidth {
+		return img
+	}
+	scale := float64(maxWidth) / float64(bounds.Dx())
+	height := int(float64(bounds.Dy()) * scale)
+	if height <= 0 {
+		height = 1
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, maxWidth, height))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, xdraw.Over, nil)
+	return dst
+}
+
 func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []string {
 	var lines []string
 	scanner := bufio.NewScanner(strings.NewReader(text))
@@ -403,7 +431,13 @@ type renderer struct {
 	imageFootnotes bool
 	footnoteIndex  map[string]int
 	footnotes      []string
+	baseDir        string
+	imageCache     map[string]image.Image
+	imageResolvers map[string]imageResolver
+	httpClient     *http.Client
 }
+
+type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
 
 const (
 	listIndentStep  = 32
@@ -418,6 +452,8 @@ type textToken struct {
 	color     color.Color
 	underline bool
 	newline   bool
+	image     image.Image
+	center    bool
 }
 
 func (r *renderer) ensureFootnote(raw string) int {
@@ -453,6 +489,120 @@ func (r *renderer) appendFootnoteMarker(out *[]textToken, size float64, index in
 		size:  markerSize,
 		color: r.c.th.FG,
 	})
+}
+
+func (r *renderer) ensureImageResolvers() {
+	if r.httpClient == nil {
+		r.httpClient = &http.Client{Timeout: 15 * time.Second}
+	}
+	if r.imageResolvers != nil {
+		return
+	}
+	r.imageResolvers = map[string]imageResolver{
+		"":      r.resolveLocalImage,
+		"file":  r.resolveLocalImage,
+		"http":  r.resolveRemoteImage,
+		"https": r.resolveRemoteImage,
+	}
+}
+
+func (r *renderer) loadImage(dest string) (image.Image, error) {
+	if strings.TrimSpace(dest) == "" {
+		return nil, errors.New("md2png: empty image destination")
+	}
+	r.ensureImageResolvers()
+	dest = strings.TrimSpace(dest)
+	scheme := ""
+	if idx := strings.Index(dest, "://"); idx != -1 {
+		scheme = strings.ToLower(dest[:idx])
+	}
+	resolver, ok := r.imageResolvers[scheme]
+	if !ok {
+		if scheme != "" {
+			return nil, fmt.Errorf("md2png: unsupported image scheme: %s", scheme)
+		}
+		return nil, fmt.Errorf("md2png: unsupported image destination: %s", dest)
+	}
+	cacheKey, loader, err := resolver(dest)
+	if err != nil {
+		return nil, err
+	}
+	if cacheKey == "" {
+		cacheKey = dest
+	}
+	if r.imageCache != nil {
+		if img, ok := r.imageCache[cacheKey]; ok {
+			return img, nil
+		}
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("md2png: resolver for %q returned nil loader", dest)
+	}
+	img, err := loader()
+	if err != nil {
+		return nil, err
+	}
+	if r.imageCache == nil {
+		r.imageCache = make(map[string]image.Image)
+	}
+	r.imageCache[cacheKey] = img
+	return img, nil
+}
+
+func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, error), error) {
+	path := strings.TrimSpace(dest)
+	if strings.HasPrefix(path, "file://") {
+		path = strings.TrimPrefix(path, "file://")
+	}
+	if !filepath.IsAbs(path) {
+		base := strings.TrimSpace(r.baseDir)
+		if base != "" {
+			path = filepath.Join(base, path)
+		}
+	}
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		if abs, err := filepath.Abs(cleaned); err == nil {
+			cleaned = abs
+		}
+	}
+	loader := func() (image.Image, error) {
+		f, err := os.Open(cleaned)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		img, _, err := image.Decode(f)
+		if err != nil {
+			return nil, err
+		}
+		return img, nil
+	}
+	return cleaned, loader, nil
+}
+
+func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image, error), error) {
+	url := strings.TrimSpace(dest)
+	loader := func() (image.Image, error) {
+		client := r.httpClient
+		if client == nil {
+			client = http.DefaultClient
+		}
+		resp, err := client.Get(url)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("md2png: fetching image %s: %s", url, resp.Status)
+		}
+		img, _, err := image.Decode(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return img, nil
+	}
+	return url, loader, nil
 }
 
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
@@ -501,11 +651,26 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				r.appendFootnoteMarker(out, size, idx)
 			}
 		case *ast.Image:
-			if child.HasChildren() {
-				r.collectInlineTokens(c, md, font, size, color, out)
+			dest := strings.TrimSpace(string(c.Destination))
+			alt := strings.TrimSpace(string(c.Text(md)))
+			if alt == "" {
+				alt = strings.TrimSpace(string(c.Title))
+			}
+			if img, err := r.loadImage(dest); err == nil {
+				*out = append(*out, textToken{image: img, center: true})
+			} else {
+				fallback := alt
+				fallbackColor := r.c.th.FG
+				if fallback == "" {
+					fallback = dest
+					fallbackColor = warningColor
+				}
+				if fallback != "" {
+					*out = append(*out, textToken{text: fallback, font: font, size: size, color: fallbackColor})
+				}
 			}
 			if r.imageFootnotes {
-				idx := r.ensureFootnote(string(c.Destination))
+				idx := r.ensureFootnote(dest)
 				r.appendFootnoteMarker(out, size, idx)
 			}
 		case *ast.Paragraph:
@@ -666,6 +831,35 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 	for _, tok := range tokens {
 		if tok.newline {
 			flush(true)
+			continue
+		}
+		if tok.image != nil {
+			flush(false)
+			maxWidthInt := int(maxWidth)
+			img := tok.image
+			if b := img.Bounds(); maxWidthInt > 0 && b.Dx() > maxWidthInt {
+				img = scaleImageToWidth(img, maxWidthInt)
+			}
+			bounds := img.Bounds()
+			startY := c.cursorY
+			drawWidth := bounds.Dx()
+			drawHeight := bounds.Dy()
+			x := left
+			if tok.center && maxWidthInt > drawWidth {
+				x += (maxWidthInt - drawWidth) / 2
+			}
+			rect := image.Rect(x, startY, x+drawWidth, startY+drawHeight)
+			draw.Draw(c.img, rect, img, bounds.Min, draw.Over)
+			baseline := startY + int(c.ptSize)
+			if baseline > rect.Max.Y {
+				baseline = rect.Max.Y
+			}
+			if baseline <= startY {
+				baseline = startY + drawHeight
+			}
+			metrics = append(metrics, lineMetric{baseline: baseline, height: drawHeight})
+			c.cursorY += drawHeight
+			c.cursorY += int(c.ptSize * 0.6)
 			continue
 		}
 		font := tok.font
@@ -1066,6 +1260,7 @@ type RenderOptions struct {
 	Fonts          Fonts
 	LinkFootnotes  *bool
 	ImageFootnotes *bool
+	BaseDir        string
 }
 
 // Render converts the provided Markdown document into a raster image using the
@@ -1115,13 +1310,26 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 		imageFootnotes = *opts.ImageFootnotes
 	}
 
+	baseDir := strings.TrimSpace(opts.BaseDir)
+	if baseDir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			baseDir = wd
+		}
+	} else if !filepath.IsAbs(baseDir) {
+		if abs, err := filepath.Abs(baseDir); err == nil {
+			baseDir = abs
+		}
+	}
+
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize)
 	r := &renderer{
 		c:              c,
 		baseSize:       opts.BaseFontSize,
 		linkFootnotes:  linkFootnotes,
 		imageFootnotes: imageFootnotes,
+		baseDir:        baseDir,
 	}
+	r.ensureImageResolvers()
 	if err := r.render(data); err != nil {
 		return nil, err
 	}
