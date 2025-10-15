@@ -1,0 +1,40 @@
+name: Render README preview
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  generate-preview:
+    name: Generate README preview
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Render README to PNG
+        run: go run . -in README.md -out output.png
+
+      - name: Encode image
+        id: encode
+        run: echo "data=$(base64 -w0 output.png)" >> "$GITHUB_OUTPUT"
+
+      - name: Post preview comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-identifier: md2png-preview
+          body: |
+            ## README Preview
+            ![Rendered README](data:image/png;base64,${{ steps.encode.outputs.data }})
