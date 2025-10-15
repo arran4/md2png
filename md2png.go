@@ -3,6 +3,7 @@ package md2png
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -15,6 +16,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"golang.org/x/image/font"
@@ -40,6 +42,8 @@ type Theme struct {
 	CodeBG   color.Color
 	QuoteBar color.Color
 	HRule    color.Color
+	Link     color.Color
+	Warning  color.Color
 }
 
 var (
@@ -50,6 +54,8 @@ var (
 		CodeBG:   color.RGBA{0xF5, 0xF5, 0xF7, 0xFF},
 		QuoteBar: color.RGBA{0xCC, 0xCC, 0xCC, 0xFF},
 		HRule:    color.RGBA{0xDD, 0xDD, 0xDD, 0xFF},
+		Link:     color.RGBA{0x00, 0x55, 0xCC, 0xFF},
+		Warning:  color.RGBA{0xCC, 0x55, 0x00, 0xFF},
 	}
 	// Dark theme defaults
 	darkTheme = Theme{
@@ -58,6 +64,8 @@ var (
 		CodeBG:   color.RGBA{0x1E, 0x1E, 0x22, 0xFF},
 		QuoteBar: color.RGBA{0x44, 0x44, 0x48, 0xFF},
 		HRule:    color.RGBA{0x33, 0x33, 0x36, 0xFF},
+		Link:     color.RGBA{0x4A, 0x90, 0xE2, 0xFF},
+		Warning:  color.RGBA{0xF2, 0x91, 0x5B, 0xFF},
 	}
 )
 
@@ -307,26 +315,27 @@ func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []s
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		ln := scanner.Text()
-		if strings.TrimSpace(ln) == "" {
+		if ln == "" {
 			lines = append(lines, "")
 			continue
 		}
-		words := strings.Fields(ln)
-		var line string
-		for _, w := range words {
-			candidate := strings.TrimSpace(line + " " + w)
-			if measureWidth(ff, size, candidate) <= maxWidth {
-				line = candidate
-			} else {
-				if line != "" {
-					lines = append(lines, line)
-				}
-				line = w
+		tokens := splitTextPreserveSpaces(ln)
+		var builder strings.Builder
+		var width float64
+		for _, tok := range tokens {
+			if tok == "" {
+				continue
 			}
+			w := measureWidth(ff, size, tok)
+			if width+w > maxWidth && builder.Len() > 0 {
+				lines = append(lines, builder.String())
+				builder.Reset()
+				width = 0
+			}
+			builder.WriteString(tok)
+			width += w
 		}
-		if line != "" {
-			lines = append(lines, line)
-		}
+		lines = append(lines, builder.String())
 	}
 	return lines
 }
@@ -334,19 +343,36 @@ func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []s
 // ---- Markdown -> draw ----
 
 type renderer struct {
-	c        *canvas
-	baseSize float64
+	c         *canvas
+	baseSize  float64
+	listStack []*listContext
+	itemStack []*listItemContext
 }
 
 type textToken struct {
-	text    string
-	font    *FontAndFace
-	size    float64
-	color   color.Color
-	newline bool
+	text      string
+	font      *FontAndFace
+	size      float64
+	color     color.Color
+	newline   bool
+	underline bool
 }
 
-func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
+type listContext struct {
+	indent      int
+	contentLeft int
+	markerArea  int
+	isOrdered   bool
+	counter     int
+	tight       bool
+}
+
+type listItemContext struct {
+	marker string
+	drawn  bool
+}
+
+func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, underline bool, out *[]textToken) {
 	if font == nil {
 		font = r.c.fonts.Regular
 	}
@@ -358,7 +384,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				parts := strings.Split(text, "\n")
 				for i, part := range parts {
 					if part != "" {
-						*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+						*out = append(*out, textToken{text: part, font: font, size: size, color: color, underline: underline})
 					}
 					if i < len(parts)-1 {
 						*out = append(*out, textToken{newline: true})
@@ -369,7 +395,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				*out = append(*out, textToken{newline: true})
 			}
 		case *ast.Paragraph:
-			r.collectInlineTokens(c, md, font, size, color, out)
+			r.collectInlineTokens(c, md, font, size, color, underline, out)
 			if child.NextSibling() != nil {
 				*out = append(*out, textToken{newline: true})
 			}
@@ -378,7 +404,9 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if c.Level >= 2 && r.c.fonts.Bold != nil {
 				nextFont = r.c.fonts.Bold
 			}
-			r.collectInlineTokens(c, md, nextFont, size, color, out)
+			r.collectInlineTokens(c, md, nextFont, size, color, underline, out)
+		case *ast.Link:
+			r.collectInlineTokens(c, md, font, size, r.c.th.Link, true, out)
 		case *ast.CodeSpan:
 			mono := r.c.fonts.Mono
 			if mono == nil {
@@ -386,21 +414,22 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 			txt := string(c.Text(md))
 			if txt != "" {
-				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
+				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color, underline: underline})
 			}
 		default:
 			if child.HasChildren() {
-				r.collectInlineTokens(child, md, font, size, color, out)
+				r.collectInlineTokens(child, md, font, size, color, underline, out)
 			}
 		}
 	}
 }
 
 type styledWord struct {
-	text  string
-	font  *FontAndFace
-	size  float64
-	color color.Color
+	text      string
+	font      *FontAndFace
+	size      float64
+	color     color.Color
+	underline bool
 }
 
 func splitTextPreserveSpaces(s string) []string {
@@ -451,9 +480,9 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 				if heightSize == 0 {
 					heightSize = c.ptSize
 				}
-				height := int(heightSize * 1.4)
-				if height == 0 {
-					height = int(c.ptSize * 1.4)
+				height := int(heightSize*1.5 + 0.5)
+				if height <= 0 {
+					height = int(c.ptSize*1.5 + 0.5)
 				}
 				c.cursorY += height
 			}
@@ -472,11 +501,17 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 			c.setFace(w.font, w.color, w.size)
 			pt := freetype.Pt(x, baseline)
 			_, _ = c.dc.DrawString(w.text, pt)
-			x += int(measureWidth(w.font, w.size, w.text))
+			advance := int(measureWidth(w.font, w.size, w.text))
+			if w.underline && strings.TrimSpace(w.text) != "" {
+				underlineY := baseline + int(w.size*0.2)
+				rect := image.Rect(x, underlineY, x+advance, underlineY+1)
+				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
+			}
+			x += advance
 		}
-		lineHeight := int(baselineSize * 1.4)
+		lineHeight := int(baselineSize*1.5 + 0.5)
 		if lineHeight <= 0 {
-			lineHeight = int(c.ptSize * 1.4)
+			lineHeight = int(c.ptSize*1.5 + 0.5)
 		}
 		c.cursorY += lineHeight
 		line = line[:0]
@@ -504,14 +539,17 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 				if len(line) == 0 {
 					continue
 				}
-				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+				if tok.size > lineMaxSize {
+					lineMaxSize = tok.size
+				}
 				lineWidth += segWidth
 				continue
 			}
 			if lineWidth+segWidth > maxWidth && len(line) > 0 {
 				flush(false)
 			}
-			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color})
+			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
@@ -521,6 +559,105 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) {
 	flush(false)
 }
 
+func (r *renderer) currentListContext() *listContext {
+	if len(r.listStack) == 0 {
+		return nil
+	}
+	return r.listStack[len(r.listStack)-1]
+}
+
+func (r *renderer) currentItemContext() *listItemContext {
+	if len(r.itemStack) == 0 {
+		return nil
+	}
+	return r.itemStack[len(r.itemStack)-1]
+}
+
+func (r *renderer) pushListContext(list *ast.List) {
+	level := len(r.listStack)
+	indentStep := int(r.baseSize * 1.8)
+	markerArea := int(r.baseSize * 2.8)
+	indent := r.c.margin + level*indentStep
+	ctx := &listContext{
+		indent:      indent,
+		contentLeft: indent + markerArea,
+		markerArea:  markerArea,
+		isOrdered:   list.IsOrdered(),
+		counter:     list.Start,
+		tight:       list.IsTight,
+	}
+	if ctx.counter <= 0 {
+		ctx.counter = 1
+	}
+	r.listStack = append(r.listStack, ctx)
+	r.c.addVSpace(int(r.baseSize * 0.3))
+}
+
+func (r *renderer) popListContext() {
+	if len(r.listStack) == 0 {
+		return
+	}
+	r.listStack = r.listStack[:len(r.listStack)-1]
+	r.c.addVSpace(int(r.baseSize * 0.5))
+}
+
+func (r *renderer) beginListItem() {
+	ctx := r.currentListContext()
+	if ctx == nil {
+		return
+	}
+	marker := "•"
+	if ctx.isOrdered {
+		marker = fmt.Sprintf("%d.", ctx.counter)
+		ctx.counter++
+	}
+	r.itemStack = append(r.itemStack, &listItemContext{marker: marker})
+}
+
+func (r *renderer) endListItem() {
+	if len(r.itemStack) == 0 {
+		return
+	}
+	ctx := r.currentListContext()
+	item := r.currentItemContext()
+	if ctx != nil && item != nil && !item.drawn {
+		r.drawListMarker(item.marker, ctx)
+		r.c.cursorY += int(r.baseSize * 1.2)
+	}
+	r.itemStack = r.itemStack[:len(r.itemStack)-1]
+	spacing := int(r.baseSize * 0.75)
+	if ctx != nil && ctx.tight {
+		spacing = int(r.baseSize * 0.45)
+	}
+	r.c.addVSpace(spacing)
+}
+
+func (r *renderer) drawListMarker(marker string, ctx *listContext) {
+	if ctx == nil {
+		return
+	}
+	start := r.c.cursorY
+	tokens := []textToken{{text: marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}
+	r.c.drawTokens(tokens, ctx.indent, ctx.indent+ctx.markerArea)
+	r.c.cursorY = start
+}
+
+func (r *renderer) ensureListMarker() {
+	ctx := r.currentListContext()
+	item := r.currentItemContext()
+	if ctx == nil || item == nil || item.drawn {
+		return
+	}
+	r.drawListMarker(item.marker, ctx)
+	item.drawn = true
+}
+
+func (r *renderer) renderUnsupportedNode(kind string, left int) {
+	tokens := []textToken{{text: "⚠ unsupported: " + kind, font: r.c.fonts.Regular, size: r.baseSize * 0.9, color: r.c.th.Warning}}
+	r.c.drawTokens(tokens, left, r.c.w-r.c.margin)
+	r.c.addVSpace(int(r.baseSize))
+}
+
 func (r *renderer) render(md []byte) error {
 	mdParser := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
@@ -528,6 +665,23 @@ func (r *renderer) render(md []byte) error {
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(md))
 	return ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		switch n.(type) {
+		case *ast.List:
+			if entering {
+				r.pushListContext(n.(*ast.List))
+			} else {
+				r.popListContext()
+			}
+			return ast.WalkContinue, nil
+		case *ast.ListItem:
+			if entering {
+				r.beginListItem()
+			} else {
+				r.endListItem()
+			}
+			return ast.WalkContinue, nil
+		}
+
 		if !entering {
 			return ast.WalkContinue, nil
 		}
@@ -548,48 +702,71 @@ func (r *renderer) render(md []byte) error {
 				size = r.baseSize * 1.15
 			}
 			var tokens []textToken
-			r.collectInlineTokens(n, md, r.c.fonts.Regular, size, r.c.th.FG, &tokens)
-			r.c.addVSpace(8)
-			r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-			r.c.addVSpace(6)
+			left := r.c.margin
+			if ctx := r.currentListContext(); ctx != nil {
+				item := r.currentItemContext()
+				if item != nil && !item.drawn {
+					gap := strings.Repeat(" ", 6)
+					tokens = append(tokens, textToken{text: item.marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+					tokens = append(tokens, textToken{text: gap, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+					left = ctx.indent
+					item.drawn = true
+				} else if ctx != nil {
+					left = ctx.contentLeft
+				}
+			}
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, size, r.c.th.FG, false, &tokens)
+			r.c.addVSpace(int(r.baseSize * 0.6))
+			r.c.drawTokens(tokens, left, r.c.w-r.c.margin)
+			r.c.addVSpace(int(r.baseSize * 0.75))
 			return ast.WalkSkipChildren, nil
 		case *ast.Paragraph:
 			var tokens []textToken
-			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
-			if len(tokens) > 0 {
-				r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-				r.c.addVSpace(8)
-			}
-			return ast.WalkSkipChildren, nil
-		case *ast.List:
-			// Render each item with bullet/number
-			for it := n.FirstChild(); it != nil; it = it.NextSibling() {
-				if li, ok := it.(*ast.ListItem); ok {
-					marker := "•"
-					if nd.IsOrdered() {
-						marker = "1."
-					} // naive numbering
-					var tokens []textToken
-					tokens = append(tokens, textToken{text: marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
-					r.collectInlineTokens(li, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
-					r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-					r.c.addVSpace(4)
+			left := r.c.margin
+			if ctx := r.currentListContext(); ctx != nil {
+				item := r.currentItemContext()
+				if item != nil && !item.drawn {
+					gap := strings.Repeat(" ", 6)
+					tokens = append(tokens, textToken{text: item.marker, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+					tokens = append(tokens, textToken{text: gap, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+					left = ctx.indent
+					item.drawn = true
+				} else {
+					left = ctx.contentLeft
 				}
 			}
-			r.c.addVSpace(6)
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, false, &tokens)
+			if len(tokens) > 0 {
+				r.c.drawTokens(tokens, left, r.c.w-r.c.margin)
+				if r.currentListContext() != nil {
+					r.c.addVSpace(int(r.baseSize * 0.6))
+				} else {
+					r.c.addVSpace(int(r.baseSize * 1.5))
+				}
+			}
 			return ast.WalkSkipChildren, nil
 		case *ast.CodeBlock, *ast.FencedCodeBlock:
-			text := strings.TrimRight(string(n.Text(md)), "\n")
+			text := string(n.Text(md))
+			left := r.c.margin
+			if ctx := r.currentListContext(); ctx != nil {
+				r.ensureListMarker()
+				left = ctx.contentLeft
+			}
 			r.c.addVSpace(4)
-			r.c.drawCodeBlock(text, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
+			r.c.drawCodeBlock(text, left, r.c.w-r.c.margin, r.baseSize*0.95)
 			return ast.WalkSkipChildren, nil
 		case *ast.Blockquote:
 			startY := r.c.cursorY
 			var tokens []textToken
-			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize*1.0, r.c.th.FG, &tokens)
+			left := r.c.margin
+			if ctx := r.currentListContext(); ctx != nil {
+				r.ensureListMarker()
+				left = ctx.contentLeft
+			}
+			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize*1.0, r.c.th.FG, false, &tokens)
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
-				r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)
+				r.c.drawTokens(tokens, left+10, r.c.w-r.c.margin)
 				r.c.addVSpace(6)
 				r.c.drawBlockquoteBar(startY+2, r.c.cursorY-startY-2)
 			}
@@ -600,10 +777,162 @@ func (r *renderer) render(md []byte) error {
 		case *ast.Text:
 			// Handled by parents (Paragraph/List/Heading)
 			return ast.WalkContinue, nil
+		case *extast.Table:
+			r.renderTable(nd, md)
+			return ast.WalkSkipChildren, nil
 		default:
-			return ast.WalkContinue, nil
+			if n.Type() == ast.TypeInline {
+				return ast.WalkContinue, nil
+			}
+			if n.Kind().String() == "Document" {
+				return ast.WalkContinue, nil
+			}
+			left := r.c.margin
+			if ctx := r.currentListContext(); ctx != nil {
+				r.ensureListMarker()
+				left = ctx.contentLeft
+			}
+			r.renderUnsupportedNode(n.Kind().String(), left)
+			return ast.WalkSkipChildren, nil
 		}
 	})
+}
+
+func (r *renderer) renderTable(tbl *extast.Table, md []byte) {
+	left := r.c.margin
+	if ctx := r.currentListContext(); ctx != nil {
+		r.ensureListMarker()
+		left = ctx.contentLeft
+	}
+
+	header, rows := r.extractTableRows(tbl, md)
+	columnCount := len(header)
+	for _, row := range rows {
+		if len(row) > columnCount {
+			columnCount = len(row)
+		}
+	}
+	if columnCount == 0 {
+		return
+	}
+
+	widths := make([]int, columnCount)
+	for i := 0; i < columnCount; i++ {
+		if i < len(header) {
+			if w := runeCount(header[i]); w > widths[i] {
+				widths[i] = w
+			}
+		}
+		for _, row := range rows {
+			if i < len(row) {
+				if w := runeCount(row[i]); w > widths[i] {
+					widths[i] = w
+				}
+			}
+		}
+		if widths[i] < 3 {
+			widths[i] = 3
+		}
+	}
+
+	mono := r.c.fonts.Mono
+	if mono == nil {
+		mono = r.c.fonts.Regular
+	}
+
+	r.c.addVSpace(int(r.baseSize * 0.6))
+	if len(header) > 0 {
+		r.drawTableLine(header, widths, left, mono, true)
+		r.drawTableSeparator(widths, left, mono)
+	}
+	for _, row := range rows {
+		r.drawTableLine(row, widths, left, mono, false)
+	}
+	r.c.addVSpace(int(r.baseSize * 0.8))
+}
+
+func (r *renderer) drawTableLine(cells []string, widths []int, left int, font *FontAndFace, bold bool) {
+	var builder strings.Builder
+	builder.WriteString("| ")
+	for i, width := range widths {
+		var cell string
+		if i < len(cells) {
+			cell = cells[i]
+		}
+		builder.WriteString(cell)
+		pad := width - runeCount(cell)
+		if pad > 0 {
+			builder.WriteString(strings.Repeat(" ", pad))
+		}
+		builder.WriteString(" | ")
+	}
+	tokens := []textToken{{text: builder.String(), font: font, size: r.baseSize * 0.95, color: r.c.th.FG}}
+	if bold && r.c.fonts.Bold != nil {
+		tokens[0].font = r.c.fonts.Bold
+	}
+	r.c.drawTokens(tokens, left, r.c.w-r.c.margin)
+}
+
+func (r *renderer) drawTableSeparator(widths []int, left int, font *FontAndFace) {
+	var builder strings.Builder
+	builder.WriteString("| ")
+	for _, width := range widths {
+		builder.WriteString(strings.Repeat("-", width))
+		builder.WriteString(" | ")
+	}
+	tokens := []textToken{{text: builder.String(), font: font, size: r.baseSize * 0.9, color: r.c.th.FG}}
+	r.c.drawTokens(tokens, left, r.c.w-r.c.margin)
+}
+
+func (r *renderer) extractTableRows(tbl *extast.Table, md []byte) ([]string, [][]string) {
+	var header []string
+	var rows [][]string
+	for child := tbl.FirstChild(); child != nil; child = child.NextSibling() {
+		switch c := child.(type) {
+		case *extast.TableHeader:
+			header = r.extractTableRow(c, md, true)
+		case *extast.TableRow:
+			rows = append(rows, r.extractTableRow(c, md, false))
+		}
+	}
+	return header, rows
+}
+
+func (r *renderer) extractTableRow(node ast.Node, md []byte, header bool) []string {
+	var cells []string
+	for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		tokens := r.tableCellTokens(cell, md, header)
+		cells = append(cells, tokensToString(tokens))
+	}
+	return cells
+}
+
+func (r *renderer) tableCellTokens(node ast.Node, md []byte, header bool) []textToken {
+	font := r.c.fonts.Regular
+	if header && r.c.fonts.Bold != nil {
+		font = r.c.fonts.Bold
+	}
+	var tokens []textToken
+	r.collectInlineTokens(node, md, font, r.baseSize, r.c.th.FG, false, &tokens)
+	return tokens
+}
+
+func tokensToString(tokens []textToken) string {
+	var builder strings.Builder
+	for _, tok := range tokens {
+		if tok.newline {
+			if builder.Len() > 0 {
+				builder.WriteByte(' ')
+			}
+			continue
+		}
+		builder.WriteString(tok.text)
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func runeCount(s string) int {
+	return len([]rune(s))
 }
 
 // ---- Library entry points ----
