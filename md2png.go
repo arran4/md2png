@@ -37,7 +37,7 @@ import (
 //  - Pure Go binary (no JS, no Python)
 //  - Reasonable rendering: headings, paragraphs, lists, code blocks, hr, blockquotes
 //  - Word wrap by width; adjustable width, margins, fonts, theme
-//  - Export PNG or JPG based on output extension
+//  - Export PNG, JPG, or GIF based on output extension
 //
 // Not a full HTML renderer; keep expectations practical.
 

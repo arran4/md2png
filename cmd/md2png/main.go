@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -15,7 +16,7 @@ import (
 
 func main() {
 	in := flag.String("in", "", "Input Markdown file (default: stdin if empty)")
-	out := flag.String("out", "out.png", "Output image file (.png or .jpg)")
+	out := flag.String("out", "out.png", "Output image file (.png, .jpg, or .gif)")
 	width := flag.Int("width", 1024, "Output image width in pixels")
 	margin := flag.Int("margin", 48, "Margin in pixels")
 	pt := flag.Float64("pt", 16, "Base font size in points (paragraph)")
@@ -93,6 +94,10 @@ func main() {
 		}
 	case ".jpg", ".jpeg":
 		if err := jpeg.Encode(file, img, &jpeg.Options{Quality: 92}); err != nil {
+			fatal(err)
+		}
+	case ".gif":
+		if err := gif.Encode(file, img, nil); err != nil {
 			fatal(err)
 		}
 	default:
