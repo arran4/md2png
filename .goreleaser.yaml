@@ -61,22 +61,22 @@ archives:
 checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
 
-signs:
-  - id: checksums
-    cmd: gpg
-    artifacts: checksum
-    env:
-      - GNUPGHOME={{ .Env.GNUPGHOME }}
-    args:
-      - --batch
-      - --yes
-      - --armor
-      - --local-user
-      - '{{ .Env.GPG_FINGERPRINT }}'
-      - --output
-      - '${artifact}.asc'
-      - --sign
-      - '${artifact}'
+#signs:
+#  - id: checksums
+#    cmd: gpg
+#    artifacts: checksum
+#    env:
+#      - GNUPGHOME={{ .Env.GNUPGHOME }}
+#    args:
+#      - --batch
+#      - --yes
+#      - --armor
+#      - --local-user
+#      - '{{ .Env.GPG_FINGERPRINT }}'
+#      - --output
+#      - '${artifact}.asc'
+#      - --sign
+#      - '${artifact}'
 
 nfpms:
   - id: linux-packages
