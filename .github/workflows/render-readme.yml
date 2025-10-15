@@ -27,7 +27,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Render README to PNG
-        run: go run . -in README.md -out output.png
+        run: go run ./cmd/md2png -in README.md -out output.png
 
       - name: Post preview comment
         if: github.event_name == 'pull_request'
