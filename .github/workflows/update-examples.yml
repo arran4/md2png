@@ -61,8 +61,18 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check head branch availability
+        id: head-branch
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/${{ github.head_ref }}"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Head branch ${{ github.head_ref }} not found on origin; skipping PR creation."
+          fi
+
       - name: Create update pull request
-        if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.event.pull_request.head.ref, 'bot/update-doc-images/') && !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
+        if: steps.diff.outputs.changed == 'true' && steps.head-branch.outputs.exists == 'true' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.event.pull_request.head.ref, 'bot/update-doc-images/') && !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
