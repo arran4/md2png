@@ -44,7 +44,6 @@ builds:
       - -s -w
     flags:
       - -trimpath
-    mod_timestamp: '{{ .CommitDate }}'
 
 archives:
   - id: release-archives
