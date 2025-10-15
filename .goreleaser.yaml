@@ -45,10 +45,6 @@ builds:
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitDate }}'
-    asmflags:
-      - all=-trimpath={{ .ProjectRoot }}
-    gcflags:
-      - all=-trimpath={{ .ProjectRoot }}
 
 archives:
   - id: release-archives
