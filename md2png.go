@@ -7,7 +7,11 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -19,6 +23,7 @@ import (
 	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gomono"
@@ -305,6 +310,46 @@ func (c *canvas) drawCodeBlock(text string, left, right int, size float64) {
 	c.cursorY = top + height + 6
 }
 
+func (c *canvas) drawImage(img image.Image, left, right int) (lineMetric, error) {
+	if img == nil {
+		return lineMetric{}, errors.New("nil image")
+	}
+	maxWidth := right - left
+	if maxWidth <= 0 {
+		return lineMetric{}, errors.New("invalid image bounds")
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		return lineMetric{}, errors.New("empty image")
+	}
+	drawImg := img
+	if bounds.Dx() > maxWidth {
+		scale := float64(maxWidth) / float64(bounds.Dx())
+		if scale <= 0 {
+			scale = 1
+		}
+		newW := maxWidth
+		newH := int(float64(bounds.Dy()) * scale)
+		if newH < 1 {
+			newH = 1
+		}
+		dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
+		xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
+		drawImg = dst
+		bounds = dst.Bounds()
+	}
+	x := left + (maxWidth-bounds.Dx())/2
+	if x < left {
+		x = left
+	}
+	top := c.cursorY
+	dest := image.Rect(x, top, x+bounds.Dx(), top+bounds.Dy())
+	draw.Draw(c.img, dest, drawImg, bounds.Min, draw.Over)
+	baseline := top + bounds.Dy()/2 + int(c.ptSize*0.2)
+	c.cursorY = dest.Max.Y
+	return lineMetric{baseline: baseline, height: bounds.Dy()}, nil
+}
+
 func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []string {
 	var lines []string
 	scanner := bufio.NewScanner(strings.NewReader(text))
@@ -397,8 +442,9 @@ func breakLongToken(ff *FontAndFace, size float64, token string, maxWidth float6
 // ---- Markdown -> draw ----
 
 type renderer struct {
-	c        *canvas
-	baseSize float64
+	c            *canvas
+	baseSize     float64
+	resolveImage ImageResolver
 }
 
 const (
@@ -414,6 +460,9 @@ type textToken struct {
 	color     color.Color
 	underline bool
 	newline   bool
+	image     image.Image
+	imageAlt  string
+	imageRef  string
 }
 
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
@@ -444,6 +493,35 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			for i := before; i < len(*out); i++ {
 				(*out)[i].color = linkColor
 				(*out)[i].underline = true
+			}
+		case *ast.Image:
+			ref := string(c.Destination)
+			alt := string(c.Text(md))
+			if alt == "" {
+				alt = string(c.Title)
+			}
+			if r.resolveImage != nil && ref != "" {
+				if img, err := r.resolveImage(ref); err == nil {
+					*out = append(*out, textToken{image: img, imageAlt: alt, imageRef: ref})
+				} else {
+					fallback := alt
+					if fallback == "" {
+						fallback = ref
+					}
+					if fallback != "" {
+						msg := fmt.Sprintf("[image missing: %s]", fallback)
+						*out = append(*out, textToken{text: msg, font: font, size: size * 0.95, color: warningColor})
+					}
+				}
+			} else {
+				fallback := alt
+				if fallback == "" {
+					fallback = ref
+				}
+				if fallback != "" {
+					label := fmt.Sprintf("[image: %s]", fallback)
+					*out = append(*out, textToken{text: label, font: font, size: size * 0.95, color: color})
+				}
 			}
 		case *ast.AutoLink:
 			label := string(c.Label(md))
@@ -609,6 +687,32 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 	}
 
 	for _, tok := range tokens {
+		if tok.image != nil {
+			flush(false)
+			metric, err := c.drawImage(tok.image, left, right)
+			if err != nil {
+				fallback := tok.imageAlt
+				if fallback == "" {
+					fallback = tok.imageRef
+				}
+				if fallback == "" {
+					fallback = "image"
+				}
+				tok.image = nil
+				tok.text = fmt.Sprintf("[image: %s]", fallback)
+				tok.font = c.fonts.Regular
+				tok.size = c.ptSize * 0.95
+				tok.color = warningColor
+				tok.underline = false
+				tok.newline = false
+			} else {
+				if metric.height > 0 {
+					metrics = append(metrics, metric)
+				}
+				c.cursorY += int(c.ptSize * 0.4)
+				continue
+			}
+		}
 		if tok.newline {
 			flush(true)
 			continue
@@ -964,6 +1068,10 @@ var (
 	DarkTheme  = darkTheme
 )
 
+// ImageResolver resolves an image reference found in Markdown (e.g. a path
+// from an `![]()` node) into a decoded image for rendering.
+type ImageResolver func(ref string) (image.Image, error)
+
 // ThemeByName returns a built-in theme by name ("light" or "dark").
 func ThemeByName(name string) (Theme, error) {
 	switch strings.ToLower(name) {
@@ -984,11 +1092,36 @@ func LoadFonts(cfg FontConfig) (Fonts, error) {
 
 // RenderOptions configure how Markdown is rendered to an image.
 type RenderOptions struct {
-	Width        int
-	Margin       int
-	BaseFontSize float64
-	Theme        Theme
-	Fonts        Fonts
+	Width         int
+	Margin        int
+	BaseFontSize  float64
+	Theme         Theme
+	Fonts         Fonts
+	ImageResolver ImageResolver
+}
+
+// FileSystemImageResolver returns an ImageResolver that loads images from the
+// local filesystem. Relative references are resolved against baseDir.
+func FileSystemImageResolver(baseDir string) ImageResolver {
+	return func(ref string) (image.Image, error) {
+		if ref == "" {
+			return nil, errors.New("md2png: empty image reference")
+		}
+		path := ref
+		if baseDir != "" && !filepath.IsAbs(ref) {
+			path = filepath.Join(baseDir, ref)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		img, _, err := image.Decode(bufio.NewReader(f))
+		if err != nil {
+			return nil, err
+		}
+		return img, nil
+	}
 }
 
 // Render converts the provided Markdown document into a raster image using the
@@ -1030,7 +1163,7 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 	}
 
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize)
-	r := &renderer{c: c, baseSize: opts.BaseFontSize}
+	r := &renderer{c: c, baseSize: opts.BaseFontSize, resolveImage: opts.ImageResolver}
 	if err := r.render(data); err != nil {
 		return nil, err
 	}

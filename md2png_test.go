@@ -1,7 +1,9 @@
 package md2png
 
 import (
+	"fmt"
 	"image"
+	"image/color"
 	"strings"
 	"testing"
 )
@@ -85,5 +87,46 @@ func TestRenderListInlineFormatting(t *testing.T) {
 	}
 	if !foundLinkPixel {
 		t.Fatalf("expected rendered list item to include link styling pixel")
+	}
+}
+
+func TestRenderInlineImage(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 80, 40))
+	fill := color.RGBA{0xAA, 0x11, 0x22, 0xFF}
+	for y := 0; y < src.Bounds().Dy(); y++ {
+		for x := 0; x < src.Bounds().Dx(); x++ {
+			src.Set(x, y, fill)
+		}
+	}
+
+	opts := RenderOptions{
+		Width:  320,
+		Margin: 24,
+		ImageResolver: func(ref string) (image.Image, error) {
+			if ref != "test.png" {
+				return nil, fmt.Errorf("unexpected ref: %s", ref)
+			}
+			return src, nil
+		},
+	}
+
+	img, err := Render([]byte("![Example](test.png)"), opts)
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+
+	bounds := img.Bounds()
+	found := false
+	for y := bounds.Min.Y; y < bounds.Max.Y && !found; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if uint8(r>>8) == fill.R && uint8(g>>8) == fill.G && uint8(b>>8) == fill.B && uint8(a>>8) == fill.A {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected rendered image pixels to be present")
 	}
 }

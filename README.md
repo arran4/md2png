@@ -18,6 +18,7 @@ It’s designed for developers who want a **self-contained binary** that can ren
     - Code blocks (monospaced background)
     - Blockquotes (with left accent bar)
     - Horizontal rules (`---`, `***`)
+    - Inline images (`![](path/to/image.png)`)
 - **Light & Dark themes**
 - **Custom fonts** (`--font`, `--fontbold`, and `--fontmono`)
 - **Adjustable width, margins, and font size**
@@ -163,7 +164,7 @@ All rendering happens in memory — no HTML or external conversion.
 ## 🧠 Roadmap
 
 - [ ] Tables
-- [ ] Inline images
+- [x] Inline images
 - [ ] Syntax highlighting
 - [ ] SVG output
 - [ ] Configurable themes via YAML/JSON

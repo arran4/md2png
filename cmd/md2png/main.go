@@ -56,12 +56,22 @@ func main() {
 		fatal(err)
 	}
 
+	var resolver md2png.ImageResolver
+	if *in != "" {
+		resolver = md2png.FileSystemImageResolver(filepath.Dir(*in))
+	} else {
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			resolver = md2png.FileSystemImageResolver(cwd)
+		}
+	}
+
 	img, err := md2png.Render(data, md2png.RenderOptions{
-		Width:        *width,
-		Margin:       *margin,
-		BaseFontSize: *pt,
-		Theme:        th,
-		Fonts:        fonts,
+		Width:         *width,
+		Margin:        *margin,
+		BaseFontSize:  *pt,
+		Theme:         th,
+		Fonts:         fonts,
+		ImageResolver: resolver,
 	})
 	if err != nil {
 		fatal(err)
