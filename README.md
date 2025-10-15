@@ -61,7 +61,7 @@ No external tools required — just Go ≥1.22.
 | Flag | Description | Default |
 |------|--------------|----------|
 | `-in` | Input Markdown file (use stdin if empty) | — |
-| `-out` | Output image file (.png or .jpg) | `out.png` |
+| `-out` | Output image file (.png, .jpg, or .gif) | `out.png` |
 | `-width` | Image width in pixels | 1024 |
 | `-margin` | Margin in pixels | 48 |
 | `-pt` | Base font size (points) | 16 |
@@ -86,6 +86,12 @@ Dark theme with larger font and wider layout:
 
 ```bash
 ./md2png -in blogpost.md -out post.png -theme dark -width 1400 -pt 18
+```
+
+Render a looping GIF (palette-quantized automatically):
+
+```bash
+./md2png -in slides.md -out slides.gif
 ```
 
 Using your own fonts:
