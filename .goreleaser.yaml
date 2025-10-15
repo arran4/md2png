@@ -60,7 +60,7 @@ archives:
         format: zip
     files:
       - README.md
-      - example.png
+      - readme.png
       - src: dist/README.png
         dst: README.png
     replacements:

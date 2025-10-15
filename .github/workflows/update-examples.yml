@@ -1,4 +1,4 @@
-name: Update example images
+name: Render documentation assets
 
 on:
   pull_request:
@@ -9,14 +9,12 @@ on:
       - ready_for_review
 
 jobs:
-  render-and-pr:
-    name: Render example images
+  render-and-refresh:
+    name: Render documentation assets
     runs-on: ubuntu-latest
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
     permissions:
       contents: write
+      issues: write
       pull-requests: write
 
     steps:
@@ -31,6 +29,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Render README to PNG
+        run: go run ./cmd/md2png -in README.md -out readme.png
+
       - name: Render light theme example
         run: |
           mkdir -p examples
@@ -40,10 +41,20 @@ jobs:
         run: |
           go run ./cmd/md2png -in testdata/all_features.md -out examples/dark-example.png -theme dark
 
-      - name: Detect example changes
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-assets-${{ github.sha }}
+          path: |
+            readme.png
+            examples/light-example.png
+            examples/dark-example.png
+          if-no-files-found: error
+
+      - name: Detect asset changes
         id: diff
         run: |
-          changed="$(git status --short -- examples/light-example.png examples/dark-example.png)"
+          changed="$(git status --short -- examples/light-example.png examples/dark-example.png readme.png)"
           if [ -n "$changed" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -51,18 +62,70 @@ jobs:
           fi
 
       - name: Create update pull request
-        if: steps.diff.outputs.changed == 'true'
+        if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.event.pull_request.head.ref, 'bot/update-doc-images/') && !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Update example images"
-          title: "Update example images for #${{ github.event.pull_request.number }}"
+          commit-message: "Update documentation images"
+          title: "Update documentation images for #${{ github.event.pull_request.number }}"
           body: |
-            Automated example image update for PR #${{ github.event.pull_request.number }}.
-            This PR refreshes the light and dark theme example renders so they match the latest Markdown changes.
-          branch: bot/update-examples/${{ github.head_ref }}
+            Automated documentation image update for PR #${{ github.event.pull_request.number }}.
+            This PR refreshes the light and dark theme example renders and the README render so they match the latest Markdown changes.
+          branch: bot/update-doc-images/${{ github.head_ref }}
           base: ${{ github.head_ref }}
           add-paths: |
             examples/light-example.png
             examples/dark-example.png
+            readme.png
           delete-branch: true
+
+      - name: Share preview location
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const identifier = '<!-- md2png-preview -->';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}#artifacts`;
+            const body = [
+              identifier,
+              '## Documentation previews',
+              `The rendered README and example images are available as [workflow artifacts](${runUrl}).`,
+              '',
+              '- `readme.png`',
+              '- `examples/light-example.png`',
+              '- `examples/dark-example.png`',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+              }
+            );
+
+            const existing = comments.find(comment => comment.body && comment.body.includes(identifier));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
