@@ -17,6 +17,7 @@ It’s designed for developers who want a **self-contained binary** that can ren
     - **Inline bold text**
     - Code blocks (monospaced background)
     - Blockquotes (with left accent bar)
+    - Tables (header and body rows)
     - Horizontal rules (`---`, `***`)
 - **Light & Dark themes**
 - **Custom fonts** (`--font`, `--fontbold`, and `--fontmono`)
@@ -164,7 +165,7 @@ All rendering happens in memory — no HTML or external conversion.
 
 ## 🧠 Roadmap
 
-- [ ] Tables
+- [x] Tables
 - [ ] Inline images
 - [ ] Syntax highlighting
 - [ ] SVG output
