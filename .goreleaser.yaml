@@ -7,6 +7,9 @@ before:
     - go mod tidy
     # Run the full test suite so releases only ship green builds.
     - go test ./...
+    # Render the README to a PNG so releases can ship the up-to-date output.
+    - mkdir -p dist
+    - go run . -in README.md -out dist/README.png
 
 builds:
   - id: md2png
@@ -58,6 +61,8 @@ archives:
     files:
       - README.md
       - example.png
+      - src: dist/README.png
+        dst: README.png
     replacements:
       darwin: macOS
       linux: Linux
@@ -154,6 +159,8 @@ release:
   github:
     owner: arran4
     name: md2png
+  extra_files:
+    - glob: dist/README.png
   draft: false
   prerelease: auto
   footer: |
