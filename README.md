@@ -1,34 +1,22 @@
 # md2png – Markdown to Image (Go CLI & Library)
 
-`md2png` is a **pure Go toolkit** that converts Markdown files directly into **PNG** or **JPG** images — no JavaScript, no Python, no scripting runtimes required. Use the bundled CLI or import it as a library in your own Go projects.
-
-It’s designed for developers who want a **self-contained binary** that can render Markdown into readable, styled images for documentation, blog headers, code snippets, or social previews.
+`md2png` renders Markdown into PNG, JPG, or GIF files using only Go. It ships as a CLI and as a library so you can call it from your own code. No Node, headless browsers, or helper scripts.
 
 ---
 
-## ✨ Features
+## What it does
 
-- **Pure Go** — no browser, Node, or scripting dependencies
-- **Renders Markdown natively** (via `goldmark`)
-- **Supports**:
-    - Headings (H1–H5)
-    - Paragraphs
-    - Lists (ordered/unordered)
-    - **Inline bold text**
-    - Code blocks (monospaced background)
-    - Blockquotes (with left accent bar)
-    - Tables (header and body rows)
-    - Horizontal rules (`---`, `***`)
-- **Light & Dark themes**
-- **Custom fonts** (`--font`, `--fontbold`, and `--fontmono`)
-- **Adjustable width, margins, and font size**
-- **Outputs PNG or JPG** depending on file extension
+- Parses Markdown with `goldmark` and draws the result straight to an image buffer.
+- Handles headings (H1–H5), paragraphs, ordered and unordered lists, bold text, code blocks, block quotes, tables, and horizontal rules.
+- Dark and light themes, adjustable width, margin, and point size.
+- Optional custom fonts: `--font`, `--fontbold`, `--fontmono`.
+- Output format follows the `-out` extension.
 
 ---
 
-## 🧱 Installation
+## Install
 
-### Clone & Build
+Clone and build:
 
 ```bash
 git clone https://github.com/arran4/md2png.git
@@ -36,9 +24,7 @@ cd md2png
 go build ./cmd/md2png
 ```
 
-### Dependencies
-
-All dependencies are pure-Go libraries:
+Dependencies are pure Go packages:
 
 ```bash
 go get github.com/yuin/goldmark@v1.7.4 \
@@ -46,55 +32,53 @@ go get github.com/yuin/goldmark@v1.7.4 \
        golang.org/x/image@latest
 ```
 
-No external tools required — just Go ≥1.22.
+Requires Go 1.22 or newer.
 
 ---
 
-## 🚀 Usage
+## CLI usage
 
 ```bash
 ./md2png -in README.md -out out.png
 ```
 
-### Options
+### Flags
 
 | Flag | Description | Default |
-|------|--------------|----------|
-| `-in` | Input Markdown file (use stdin if empty) | — |
-| `-out` | Output image file (.png, .jpg, or .gif) | `out.png` |
+|------|-------------|---------|
+| `-in` | Markdown input file, or stdin when empty | — |
+| `-out` | Output image (`.png`, `.jpg`, `.gif`) | `out.png` |
 | `-width` | Image width in pixels | 1024 |
 | `-margin` | Margin in pixels | 48 |
 | `-pt` | Base font size (points) | 16 |
-| `-theme` | Theme: `light` or `dark` | `light` |
-| `-font` | Regular font (TTF path) | built-in Go Regular |
-| `-fontbold` | Bold font (TTF path) | built-in Go Bold |
-| `-fontmono` | Monospace font (TTF path) | built-in Go Mono |
-| `-footnote-links` | Append link destinations as numbered footnotes | `true` |
-| `-footnote-images` | Append image destinations as numbered footnotes | `false` |
-
----
+| `-theme` | `light` or `dark` | `light` |
+| `-font` | Regular font TTF path | built-in Go Regular |
+| `-fontbold` | Bold font TTF path | built-in Go Bold |
+| `-fontmono` | Monospace font TTF path | built-in Go Mono |
+| `-footnote-links` | Emit link targets as numbered footnotes | `true` |
+| `-footnote-images` | Emit image targets as numbered footnotes | `false` |
 
 ### Examples
 
-Render a Markdown file to PNG:
+Render Markdown from disk:
 
 ```bash
 ./md2png -in example.md -out example.png
 ```
 
-Dark theme with larger font and wider layout:
+Dark theme, wider frame, larger type:
 
 ```bash
 ./md2png -in blogpost.md -out post.png -theme dark -width 1400 -pt 18
 ```
 
-Render a looping GIF (palette-quantized automatically):
+Produce an animated GIF (palette handled for you):
 
 ```bash
 ./md2png -in slides.md -out slides.gif
 ```
 
-Using your own fonts:
+Use your own fonts:
 
 ```bash
 ./md2png -in notes.md -out notes.jpg \
@@ -102,7 +86,7 @@ Using your own fonts:
   -fontmono /usr/share/fonts/TTF/DejaVuSansMono.ttf
 ```
 
-Pipe Markdown directly:
+From stdin:
 
 ```bash
 echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
@@ -110,9 +94,7 @@ echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
 
 ---
 
-## 📦 Library Usage
-
-Import `github.com/arran4/md2png` to render Markdown from your own Go code:
+## Library usage
 
 ```go
 package main
@@ -142,38 +124,34 @@ func main() {
 }
 ```
 
-`RenderOptions` accepts custom dimensions, themes, fonts, and footnote toggles. To load your own TTFs, call `md2png.LoadFonts` and pass the result to `RenderOptions.Fonts`. Set `RenderOptions.LinkFootnotes` or `RenderOptions.ImageFootnotes` to override the default link/image footnote behavior from code.
+`RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
 
 ---
 
-## 🧩 Output Example
+## Output
 
-**[Light Theme](examples/light-example.png)**
+Light theme:
 
 ![Light example](examples/light-example.png)
 
-**[Dark Theme](examples/dark-example.png)**
+Dark theme:
 
 ![Dark example](examples/dark-example.png)
 
 ---
 
-## 📄 License
+## How it works
 
-`md2png` is distributed under the terms of the [MIT License](LICENSE).
+1. Parse Markdown with [`yuin/goldmark`](https://github.com/yuin/goldmark).
+2. Walk the AST and draw elements onto an RGBA image with [`freetype`](https://pkg.go.dev/github.com/golang/freetype).
+3. Wrap text, handle indentation, block quotes, code blocks, and tables.
+4. Encode the result as PNG, JPEG, or GIF based on the `-out` extension.
 
-## ⚙️ How It Works
-
-1. Parses Markdown via [`yuin/goldmark`](https://github.com/yuin/goldmark)
-2. Walks the AST and draws text elements directly onto an RGBA image using [`freetype`](https://pkg.go.dev/github.com/golang/freetype)
-3. Word-wraps text, handles indentation, blockquotes, and code blocks
-4. Exports as PNG or JPEG depending on `-out` extension
-
-All rendering happens in memory — no HTML or external conversion.
+Everything happens in memory; there is no HTML renderer or external process.
 
 ---
 
-## 🧠 Roadmap
+## Roadmap
 
 - [x] Tables
 - [x] Inline images
@@ -183,6 +161,6 @@ All rendering happens in memory — no HTML or external conversion.
 
 ---
 
-## 🪪 License
+## License
 
-MIT © 2025 Arran4
+`md2png` is available under the [MIT License](LICENSE).
