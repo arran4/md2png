@@ -158,6 +158,10 @@ func main() {
 
 ---
 
+## 📄 License
+
+`md2png` is distributed under the terms of the [MIT License](LICENSE).
+
 ## ⚙️ How It Works
 
 1. Parses Markdown via [`yuin/goldmark`](https://github.com/yuin/goldmark)
