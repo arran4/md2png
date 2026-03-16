@@ -50,6 +50,7 @@ jobs:
             examples/light-example.png
             examples/dark-example.png
           if-no-files-found: error
+          retention-days: 1
 
       - name: Detect asset changes
         id: diff
