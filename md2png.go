@@ -7,9 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -209,39 +206,26 @@ func (c *canvas) setFace(fnt *FontAndFace, color color.Color, size float64) {
 	c.dc.SetFont(fnt.Font)
 }
 
-func (c *canvas) drawTextWrapped(fnt *FontAndFace, col color.Color, size float64, text string, left int, right int) int {
-	c.setFace(fnt, col, size)
 
-	maxWidth := float64(right - left)
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return 0
+func getNodeText(n ast.Node, md []byte) string {
+	switch n := n.(type) {
+	case *ast.Text:
+		return string(n.Segment.Value(md))
+	case *ast.String:
+		return string(n.Value)
 	}
-	// Build lines
-	var lines []string
-	var line string
-	for _, w := range words {
-		candidate := strings.TrimSpace(line + " " + w)
-		if measureWidth(fnt, size, candidate) <= maxWidth {
-			line = candidate
-		} else {
-			if line != "" {
-				lines = append(lines, line)
-			}
-			line = w
+
+	var b []byte
+	if n.Type() == ast.TypeBlock {
+		lines := n.Lines()
+		for i := 0; i < lines.Len(); i++ {
+			line := lines.At(i)
+			b = append(b, line.Value(md)...)
 		}
+	} else if n.Type() == ast.TypeInline {
+		b = n.Text(md) //nolint:staticcheck
 	}
-	if line != "" {
-		lines = append(lines, line)
-	}
-
-	lineHeight := int(size * 1.4) // simple
-	for _, ln := range lines {
-		pt := freetype.Pt(left, c.cursorY+int(size))
-		_, _ = c.dc.DrawString(ln, pt)
-		c.cursorY += lineHeight
-	}
-	return len(lines)
+	return string(b)
 }
 
 func measureWidth(fnt *FontAndFace, size float64, s string) float64 {
@@ -551,9 +535,7 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 
 func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, error), error) {
 	path := strings.TrimSpace(dest)
-	if strings.HasPrefix(path, "file://") {
 		path = strings.TrimPrefix(path, "file://")
-	}
 	if !filepath.IsAbs(path) {
 		base := strings.TrimSpace(r.baseDir)
 		if base != "" {
@@ -652,7 +634,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 		case *ast.Image:
 			dest := strings.TrimSpace(string(c.Destination))
-			alt := strings.TrimSpace(string(c.Text(md)))
+				alt := strings.TrimSpace(getNodeText(c, md))
 			if alt == "" {
 				alt = strings.TrimSpace(string(c.Title))
 			}
@@ -689,7 +671,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if mono == nil {
 				mono = font
 			}
-			txt := string(c.Text(md))
+				txt := getNodeText(c, md)
 			if txt != "" {
 				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
 			}
@@ -938,7 +920,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 		var tokens []textToken
 		r.collectInlineTokens(node, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
 		if len(tokens) == 0 {
-			text := strings.TrimRight(string(node.Text(md)), "\n")
+				text := strings.TrimRight(getNodeText(node, md), "\n")
 			if text == "" {
 				return
 			}
@@ -967,7 +949,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			r.renderList(c, md, level+1)
 		case *ast.CodeBlock:
 			ensureMarker(startY + int(r.baseSize))
-			text := strings.TrimRight(string(c.Text(md)), "\n")
+				text := strings.TrimRight(getNodeText(c, md), "\n")
 			r.c.addVSpace(int(r.baseSize * 0.2))
 			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
@@ -975,7 +957,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			}
 		case *ast.FencedCodeBlock:
 			ensureMarker(startY + int(r.baseSize))
-			text := strings.TrimRight(string(c.Text(md)), "\n")
+				text := strings.TrimRight(getNodeText(c, md), "\n")
 			r.c.addVSpace(int(r.baseSize * 0.2))
 			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
@@ -1187,7 +1169,7 @@ func (r *renderer) render(md []byte) error {
 			r.renderTable(nd, md)
 			return ast.WalkSkipChildren, nil
 		case *ast.CodeBlock, *ast.FencedCodeBlock:
-			text := strings.TrimRight(string(n.Text(md)), "\n")
+				text := strings.TrimRight(getNodeText(n, md), "\n")
 			r.c.addVSpace(4)
 			r.c.drawCodeBlock(text, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
 			return ast.WalkSkipChildren, nil
