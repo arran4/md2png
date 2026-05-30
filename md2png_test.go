@@ -226,7 +226,7 @@ func TestRenderEmbedsRemoteImage(t *testing.T) {
 		t.Fatalf("encode sample image: %v", err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(buf.Bytes())
 	}))
