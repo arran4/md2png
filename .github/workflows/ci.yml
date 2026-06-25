@@ -420,7 +420,9 @@ jobs:
           go-version-file: go.mod
       - name: Tag commit for release (workflow_dispatch)
         if: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.mode, 'release-') }}
-        run: git tag ${{ needs.prepare-release-tag.outputs.release_tag }}
+        run: |
+          git tag ${{ needs.prepare-release-tag.outputs.release_tag }}
+          git push origin ${{ needs.prepare-release-tag.outputs.release_tag }}
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
