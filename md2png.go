@@ -1007,11 +1007,32 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
 		switch n := node.(type) {
 		case *extensionAST.TableHeader:
+			// The children of TableHeader are TableCell, not TableRow!
+			// We need to collect the cells directly.
+			// Actually, wait, goldmark v1.7.4 might be different from whatever was assumed.
+			// Let's create a pseudo-row just to pass to a logic, or adjust.
+			// The original code was:
+			/*
 			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
 				if tr, ok := child.(*extensionAST.TableRow); ok {
 					rows = append(rows, r.collectTableRow(tr, md, true))
 				}
 			}
+			*/
+			// Since we know TableHeader directly contains TableCells, let's collect them!
+			var cells [][]textToken
+			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if tc, ok := cell.(*extensionAST.TableCell); ok {
+					var tokens []textToken
+					font := r.c.fonts.Regular
+					if r.c.fonts.Bold != nil {
+						font = r.c.fonts.Bold
+					}
+					r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
+					cells = append(cells, tokens)
+				}
+			}
+			rows = append(rows, cells)
 		case *extensionAST.TableRow:
 			rows = append(rows, r.collectTableRow(n, md, false))
 		}
