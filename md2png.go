@@ -206,7 +206,6 @@ func (c *canvas) setFace(fnt *FontAndFace, color color.Color, size float64) {
 	c.dc.SetFont(fnt.Font)
 }
 
-
 func getNodeText(n ast.Node, md []byte) string {
 	switch n := n.(type) {
 	case *ast.Text:
@@ -535,7 +534,7 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 
 func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, error), error) {
 	path := strings.TrimSpace(dest)
-		path = strings.TrimPrefix(path, "file://")
+	path = strings.TrimPrefix(path, "file://")
 	if !filepath.IsAbs(path) {
 		base := strings.TrimSpace(r.baseDir)
 		if base != "" {
@@ -634,7 +633,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 		case *ast.Image:
 			dest := strings.TrimSpace(string(c.Destination))
-				alt := strings.TrimSpace(getNodeText(c, md))
+			alt := strings.TrimSpace(getNodeText(c, md))
 			if alt == "" {
 				alt = strings.TrimSpace(string(c.Title))
 			}
@@ -671,7 +670,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if mono == nil {
 				mono = font
 			}
-				txt := getNodeText(c, md)
+			txt := getNodeText(c, md)
 			if txt != "" {
 				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
 			}
@@ -920,7 +919,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 		var tokens []textToken
 		r.collectInlineTokens(node, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
 		if len(tokens) == 0 {
-				text := strings.TrimRight(getNodeText(node, md), "\n")
+			text := strings.TrimRight(getNodeText(node, md), "\n")
 			if text == "" {
 				return
 			}
@@ -949,7 +948,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			r.renderList(c, md, level+1)
 		case *ast.CodeBlock:
 			ensureMarker(startY + int(r.baseSize))
-				text := strings.TrimRight(getNodeText(c, md), "\n")
+			text := strings.TrimRight(getNodeText(c, md), "\n")
 			r.c.addVSpace(int(r.baseSize * 0.2))
 			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
@@ -957,7 +956,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			}
 		case *ast.FencedCodeBlock:
 			ensureMarker(startY + int(r.baseSize))
-				text := strings.TrimRight(getNodeText(c, md), "\n")
+			text := strings.TrimRight(getNodeText(c, md), "\n")
 			r.c.addVSpace(int(r.baseSize * 0.2))
 			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
@@ -987,12 +986,16 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 	}
 }
 
-func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte) [][]textToken {
+func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHeader bool) [][]textToken {
 	var cells [][]textToken
 	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
 		if tc, ok := cell.(*extensionAST.TableCell); ok {
 			var tokens []textToken
-			r.collectInlineTokens(tc, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			font := r.c.fonts.Regular
+			if isHeader && r.c.fonts.Bold != nil {
+				font = r.c.fonts.Bold
+			}
+			r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
 			cells = append(cells, tokens)
 		}
 	}
@@ -1006,11 +1009,11 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		case *extensionAST.TableHeader:
 			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
 				if tr, ok := child.(*extensionAST.TableRow); ok {
-					rows = append(rows, r.collectTableRow(tr, md))
+					rows = append(rows, r.collectTableRow(tr, md, true))
 				}
 			}
 		case *extensionAST.TableRow:
-			rows = append(rows, r.collectTableRow(n, md))
+			rows = append(rows, r.collectTableRow(n, md, false))
 		}
 	}
 	if len(rows) == 0 {
@@ -1169,7 +1172,7 @@ func (r *renderer) render(md []byte) error {
 			r.renderTable(nd, md)
 			return ast.WalkSkipChildren, nil
 		case *ast.CodeBlock, *ast.FencedCodeBlock:
-				text := strings.TrimRight(getNodeText(n, md), "\n")
+			text := strings.TrimRight(getNodeText(n, md), "\n")
 			r.c.addVSpace(4)
 			r.c.drawCodeBlock(text, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
 			return ast.WalkSkipChildren, nil
