@@ -552,7 +552,7 @@ func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, 
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		img, _, err := image.Decode(f)
 		if err != nil {
 			return nil, err
@@ -573,7 +573,7 @@ func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image,
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("md2png: fetching image %s: %s", url, resp.Status)
 		}

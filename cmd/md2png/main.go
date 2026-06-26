@@ -56,7 +56,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		data, err = io.ReadAll(f)
 		if err == nil {
 			baseDir, err = filepath.Abs(filepath.Dir(*in))
@@ -84,7 +84,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	ext := strings.ToLower(filepath.Ext(*out))
 	switch ext {
