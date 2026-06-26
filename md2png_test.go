@@ -187,7 +187,7 @@ func TestRenderEmbedsLocalImage(t *testing.T) {
 		t.Fatalf("create temp image: %v", err)
 	}
 	if err := png.Encode(file, block); err != nil {
-		file.Close()
+		_ = file.Close()
 		t.Fatalf("encode temp image: %v", err)
 	}
 	if err := file.Close(); err != nil {
