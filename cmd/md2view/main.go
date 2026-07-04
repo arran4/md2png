@@ -145,18 +145,20 @@ func main() {
 				b.Release()
 				w.Publish()
 			case mouse.Event:
-				if e.Button == mouse.ButtonLeft {
-					if e.Direction == mouse.DirPress {
+				switch e.Button {
+				case mouse.ButtonLeft:
+					switch e.Direction {
+					case mouse.DirPress:
 						moving = true
 						moveStart = image.Point{int(e.X), int(e.Y)}
 						moveOffset = offset
-					} else if e.Direction == mouse.DirRelease {
+					case mouse.DirRelease:
 						moving = false
 					}
-				} else if e.Button == mouse.ButtonWheelUp {
+				case mouse.ButtonWheelUp:
 					zoom *= 1.1
 					w.Send(paint.Event{})
-				} else if e.Button == mouse.ButtonWheelDown {
+				case mouse.ButtonWheelDown:
 					zoom /= 1.1
 					w.Send(paint.Event{})
 				}
