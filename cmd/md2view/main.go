@@ -62,8 +62,8 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		defer func() { _ = f.Close() }()
 		data, err = io.ReadAll(f)
+		_ = f.Close()
 		if err == nil {
 			baseDir, err = filepath.Abs(filepath.Dir(*in))
 		}
@@ -98,6 +98,12 @@ func main() {
 		defer w.Release()
 
 		var sz size.Event
+		var b screen.Buffer
+		defer func() {
+			if b != nil {
+				b.Release()
+			}
+		}()
 
 		zoom := 1.0
 		offset := image.Point{}
@@ -114,16 +120,25 @@ func main() {
 				}
 			case size.Event:
 				sz = e
+				if b != nil {
+					b.Release()
+					b = nil
+				}
+				if !sz.Bounds().Empty() {
+					var err error
+					b, err = s.NewBuffer(sz.Size())
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
 				w.Send(paint.Event{})
 			case paint.Event:
-				if sz.Bounds().Empty() {
+				if sz.Bounds().Empty() || b == nil {
 					continue
 				}
 
-				// Draw logic
-				dst := image.NewRGBA(sz.Bounds())
 				// Fill background
-				draw.Draw(dst, dst.Bounds(), image.NewUniform(th.BG), image.Point{}, draw.Src)
+				draw.Draw(b.RGBA(), b.RGBA().Bounds(), image.NewUniform(th.BG), image.Point{}, draw.Src)
 
 				// Calculate scaled dimensions
 				scaledW := int(float64(img.Bounds().Dx()) * zoom)
@@ -132,17 +147,11 @@ func main() {
 				// Calculate position based on offset
 				dr := image.Rect(offset.X, offset.Y, offset.X+scaledW, offset.Y+scaledH)
 
-				// Draw scaled image
-				xdraw.CatmullRom.Scale(dst, dr, img, img.Bounds(), draw.Over, nil)
+				// Draw scaled image directly to buffer
+				xdraw.ApproxBiLinear.Scale(b.RGBA(), dr, img, img.Bounds(), draw.Over, nil)
 
 				// Upload to screen
-				b, err := s.NewBuffer(sz.Size())
-				if err != nil {
-					log.Fatal(err)
-				}
-				draw.Draw(b.RGBA(), b.RGBA().Bounds(), dst, image.Point{}, draw.Src)
 				w.Upload(image.Point{}, b, b.Bounds())
-				b.Release()
 				w.Publish()
 			case mouse.Event:
 				switch e.Button {
