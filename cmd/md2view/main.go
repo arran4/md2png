@@ -203,16 +203,22 @@ func main() {
 						zoom /= 1.1
 						w.Send(paint.Event{})
 					case key.CodeLeftArrow:
-						offset.X -= 20
-						w.Send(paint.Event{})
-					case key.CodeRightArrow:
 						offset.X += 20
 						w.Send(paint.Event{})
+					case key.CodeRightArrow:
+						offset.X -= 20
+						w.Send(paint.Event{})
 					case key.CodeUpArrow:
-						offset.Y -= 20
+						offset.Y += 20
 						w.Send(paint.Event{})
 					case key.CodeDownArrow:
-						offset.Y += 20
+						offset.Y -= 20
+						w.Send(paint.Event{})
+					case key.CodePageUp:
+						offset.Y += 200
+						w.Send(paint.Event{})
+					case key.CodePageDown:
+						offset.Y -= 200
 						w.Send(paint.Event{})
 					}
 				}
