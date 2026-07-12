@@ -51,21 +51,32 @@ func main() {
 
 	var data []byte
 	var baseDir string
-	if *in == "" {
-		data, err = io.ReadAll(os.Stdin)
-		if err == nil {
-			baseDir, err = os.Getwd()
+
+	inputFile := *in
+	if inputFile == "" && flag.NArg() > 0 {
+		inputFile = flag.Arg(0)
+	}
+
+	if inputFile == "" {
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			data, err = io.ReadAll(os.Stdin)
+			if err == nil {
+				baseDir, err = os.Getwd()
+			}
+		} else {
+			fatal(fmt.Errorf("no input file specified and no data piped to stdin"))
 		}
 	} else {
 		var f *os.File
-		f, err = os.Open(*in)
+		f, err = os.Open(inputFile)
 		if err != nil {
 			fatal(err)
 		}
 		data, err = io.ReadAll(f)
 		_ = f.Close()
 		if err == nil {
-			baseDir, err = filepath.Abs(filepath.Dir(*in))
+			baseDir, err = filepath.Abs(filepath.Dir(inputFile))
 		}
 	}
 	if err != nil {
@@ -85,6 +96,8 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+
+	fmt.Println("Starting md2view...")
 
 	driver.Main(func(s screen.Screen) {
 		w, err := s.NewWindow(&screen.NewWindowOptions{
