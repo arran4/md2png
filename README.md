@@ -100,7 +100,7 @@ echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
 `md2view` is a GUI viewer for Markdown. It supports the same flags as `md2png` for theming, fonts, width, and margins, but renders the Markdown in a zoomable, pannable desktop window instead of saving it to an image.
 
 ```bash
-./md2view -in README.md
+./md2view README.md
 ```
 
 ### Controls
