@@ -22,6 +22,7 @@ Clone and build:
 git clone https://github.com/arran4/md2png.git
 cd md2png
 go build ./cmd/md2png
+go build ./cmd/md2view
 ```
 
 Dependencies are pure Go packages:
@@ -91,6 +92,22 @@ From stdin:
 ```bash
 echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
 ```
+
+---
+
+## md2view usage
+
+`md2view` is a GUI viewer for Markdown. It supports the same flags as `md2png` for theming, fonts, width, and margins, but renders the Markdown in a zoomable, pannable desktop window instead of saving it to an image.
+
+```bash
+./md2view README.md
+```
+
+### Controls
+
+- **Pan/Scroll:** Left Click and Drag, Arrow Keys, or PageUp/PageDown.
+- **Zoom In/Out:** Mouse Wheel Up/Down, or `+` / `-` keys.
+- **Quit:** `ESC` or `Q`.
 
 ---
 
