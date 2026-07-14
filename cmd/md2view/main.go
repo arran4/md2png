@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/arran4/md2png"
+	"github.com/arran4/md2png/skill"
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
@@ -22,6 +23,12 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "skill" {
+		skill.BuiltinSkillLoader = md2png.BuiltinSkillFS
+		skill.Execute(os.Args[2:])
+		return
+	}
+
 	in := flag.String("in", "", "Input Markdown file (default: stdin if empty)")
 	width := flag.Int("width", 1024, "Output image width in pixels")
 	margin := flag.Int("margin", 48, "Margin in pixels")
