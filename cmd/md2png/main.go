@@ -12,9 +12,15 @@ import (
 	"strings"
 
 	"github.com/arran4/md2png"
+	"github.com/arran4/md2png/skill"
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "skill" {
+		skill.Execute(os.Args[2:])
+		return
+	}
+
 	in := flag.String("in", "", "Input Markdown file (default: stdin if empty)")
 	out := flag.String("out", "out.png", "Output image file (.png, .jpg, or .gif)")
 	width := flag.Int("width", 1024, "Output image width in pixels")

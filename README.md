@@ -168,6 +168,52 @@ Everything happens in memory; there is no HTML renderer or external process.
 
 ---
 
+## Agent Skills
+
+`md2png` features an integrated **Agent Skills** system, teaching AI coding agents how to interact with the CLI effectively, avoid common pitfalls, and respect formatting limits. You can install, inspect, update, and remove these skills.
+
+Skills are securely installed into `.agents/skills/` (for the project scope) or your user's home directory (`--scope user`).
+
+### Installing a skill
+
+You can install a skill from a remote repository, a local path, or the official builtin skill:
+
+```bash
+# Install the official builtin skill
+./md2png skill install md2png
+
+# Install from a remote GitHub repository
+./md2png skill install owner/repository cool-skill
+
+# Install from a local directory
+./md2png skill install ./my-local-skill my-skill
+```
+
+### Managing skills
+
+List all installed skills:
+```bash
+./md2png skill list
+```
+
+Update a specific skill, or update all skills at once:
+```bash
+./md2png skill update cool-skill
+./md2png skill update --all
+```
+
+If you have made local changes to a skill's files, `update` will refuse to overwrite them. Use `--force` to discard your local edits.
+
+Inspect metadata for an installed skill:
+```bash
+./md2png skill inspect cool-skill
+```
+
+Remove a skill:
+```bash
+./md2png skill remove cool-skill
+```
+
 ## Roadmap
 
 - [x] Tables
