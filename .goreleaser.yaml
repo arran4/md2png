@@ -61,6 +61,7 @@ builds:
 
 archives:
   - id: release-archives
+    allow_different_binary_count: true
     builds:
       - md2png
       - md2view
