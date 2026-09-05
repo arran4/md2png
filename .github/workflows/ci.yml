@@ -133,10 +133,14 @@ jobs:
                   # Internal publisher dispatch mode
                   if [[ "${{ github.ref_type }}" != "tag" ]]; then
                     echo "publish-tag mode requires an eligible tag context" >&2
-                    exit 1
+                    false
+                  elif ! [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+                    echo "publish-tag mode requires an eligible semver tag context (vX.Y.Z...)" >&2
+                    false
+                  else
+                    run_code_checks=true
+                    run_release=true
                   fi
-                  run_code_checks=true
-                  run_release=true
                   ;;
                 monthly-maintenance)
                   run_code_checks=true
