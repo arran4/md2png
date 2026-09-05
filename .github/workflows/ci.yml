@@ -43,6 +43,11 @@ on:
         required: false
         default: ""
         type: string
+      publish_snapshot:
+        description: "Internal: publish as snapshot"
+        required: false
+        default: false
+        type: boolean
       allow_prs:
         description: "Allow automation to open pull requests"
         required: false
@@ -530,7 +535,11 @@ jobs:
 
           # Explicitly dispatch the publisher workflow at the new tag ref
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            gh workflow run "ci.yml" --ref "$TAG" -f mode="publish-tag"
+            SNAPSHOT_FLAG="false"
+            if [[ "${{ inputs.mode }}" == "release-test" || "${{ inputs.mode }}" == "release-rc" || "${{ inputs.mode }}" == "release-alpha" ]]; then
+              SNAPSHOT_FLAG="true"
+            fi
+            gh workflow run "ci.yml" --ref "$TAG" -f mode="publish-tag" -f publish_snapshot="$SNAPSHOT_FLAG"
           fi
 
   goreleaser:
@@ -555,7 +564,7 @@ jobs:
           version: '~> v2'
           args: >-
             release --clean
-            ${{ (contains(needs.release-context.outputs.release_tag, '-test') || contains(needs.release-context.outputs.release_tag, '-rc') || contains(needs.release-context.outputs.release_tag, '-alpha')) && '--snapshot' || '' }}
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_snapshot == true) && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
