@@ -93,7 +93,7 @@ jobs:
           case "${{ github.event_name }}" in
             push)
               run_code_checks=true
-              if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
                 run_release=true
               fi
               ;;
@@ -555,7 +555,7 @@ jobs:
           version: '~> v2'
           args: >-
             release --clean
-            ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'release-test' || inputs.mode == 'release-rc' || inputs.mode == 'release-alpha')) && '--snapshot' || '' }}
+            ${{ (contains(needs.release-context.outputs.release_tag, '-test') || contains(needs.release-context.outputs.release_tag, '-rc') || contains(needs.release-context.outputs.release_tag, '-alpha')) && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
