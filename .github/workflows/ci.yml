@@ -98,8 +98,11 @@ jobs:
           case "${{ github.event_name }}" in
             push)
               run_code_checks=true
-              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-                run_release=true
+              if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+                # Ensure the pushed tag is an eligible release tag
+                if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+                  run_release=true
+                fi
               fi
               ;;
             pull_request)
