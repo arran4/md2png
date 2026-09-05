@@ -1,0 +1,31 @@
+This PR migrates the CI workflow from the legacy 006 guidance to the current canonical 042 + 041 architecture.
+
+Reference guidance used:
+- Current canonical CI guidance: https://arran4.github.io/blog/post/2026/042-simplified-github-ci-release-safe/
+- Release-safety companion: https://arran4.github.io/blog/post/2026/041-release-safe-single-owner-github-ci/
+
+Changes and Release Lifecycle Updates:
+- Removed obsolete manual gh release tasks and replaced with `publish-tag` mode which ensures safe release creation without conflicts.
+- **Single GitHub Release Owner:** GoReleaser is now explicitly set as the sole GitHub Release owner for this repository.
+- The release lifecycle follows:
+  1. Human selects a `release-*` workflow_dispatch mode.
+  2. Required checks and builds complete first.
+  3. Calculate the semantic version/tag.
+  4. Tag the exact validated commit.
+  5. Push the tag using the repository GITHUB_TOKEN.
+  6. Explicitly dispatch the CI workflow at that tag ref via `gh workflow run ci.yml --ref "$TAG" -f mode=publish-tag`.
+  7. Genuine externally/user-created eligible tags enter the same publication path.
+  8. `publish-tag` strictly verifies that it is run on a tag context and cannot recurse.
+
+Validation Performed:
+- YAML syntax was validated statically (pyyaml parsed without errors).
+- The repository's `go test ./...` and `go vet ./...` successfully passed locally.
+
+Significant Repository-Specific Behaviour Preserved:
+- Setup for actions/checkout@v6 and actions/setup-go@v6 were maintained.
+- `gitleaks` secret scanning and `golangci` linting remain as they were.
+- Autofix format jobs and cleanup jobs (`autofix`, `cleanup-autofix-prs`) were kept.
+
+Deviations from generic 042 examples:
+- Preserved `v6`/`v9` versions of GitHub Actions explicitly to avoid Go 1.25 incompatibility or node deprecation issues rather than defaulting generically to `<v7` actions seen in the guide.
+- Retained bash return/exit patterns specific to safe bash failures inside actions to avoid blocking sandbox environments unexpectedly while validating.
