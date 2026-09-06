@@ -164,6 +164,7 @@ type canvas struct {
 	img     *image.RGBA
 	dc      *freetype.Context
 	w, h    int
+	maxH    int // Maximum permitted height
 	margin  int
 	cursorY int
 	lineGap int // pixels between text lines
@@ -172,9 +173,13 @@ type canvas struct {
 	ptSize  float64
 }
 
-func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64) *canvas {
-	// Start tall; we'll crop later
-	img := image.NewRGBA(image.Rect(0, 0, width, 4096*2))
+func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, maxH int) *canvas {
+	startH := 8192
+	if startH > maxH {
+		startH = maxH
+	}
+	// Start tall; we'll grow later if needed
+	img := image.NewRGBA(image.Rect(0, 0, width, startH))
 	dc := freetype.NewContext()
 	dc.SetDPI(96)
 	dc.SetClip(img.Bounds())
@@ -191,6 +196,7 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64) *ca
 		dc:      dc,
 		w:       width,
 		h:       img.Bounds().Dy(),
+		maxH:    maxH,
 		margin:  margin,
 		cursorY: margin,
 		lineGap: 4,
@@ -198,6 +204,38 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64) *ca
 		fonts:   fonts,
 		ptSize:  ptSize,
 	}
+}
+
+func (c *canvas) ensureHeightAbs(targetY int) {
+	if targetY <= c.h {
+		return
+	}
+	if c.maxH > 0 && targetY > c.maxH {
+		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d)", targetY, c.maxH))
+	}
+
+	newH := c.h * 2
+	if newH < targetY+4096 {
+		newH = targetY + 4096
+	}
+	if c.maxH > 0 && newH > c.maxH {
+		newH = c.maxH
+	}
+
+	newImg := image.NewRGBA(image.Rect(0, 0, c.w, newH))
+	draw.Draw(newImg, newImg.Bounds(), image.NewUniform(c.th.BG), image.Point{}, draw.Src)
+	draw.Draw(newImg, c.img.Bounds(), c.img, image.Point{}, draw.Src)
+
+	c.img = newImg
+	c.h = newH
+
+	c.dc = freetype.NewContext()
+	c.dc.SetDPI(96)
+	c.dc.SetClip(c.img.Bounds())
+	c.dc.SetDst(c.img)
+	c.dc.SetSrc(image.NewUniform(c.th.FG))
+	c.dc.SetFont(nil)
+	c.dc.SetFontSize(c.ptSize)
 }
 
 func (c *canvas) setFace(fnt *FontAndFace, color color.Color, size float64) {
@@ -257,10 +295,14 @@ func measureWidth(fnt *FontAndFace, size float64, s string) float64 {
 	return width
 }
 
-func (c *canvas) addVSpace(px int) { c.cursorY += px }
+func (c *canvas) addVSpace(px int) {
+	c.ensureHeightAbs(c.cursorY + px)
+	c.cursorY += px
+}
 
 func (c *canvas) drawHRule() {
 	y := c.cursorY + 4
+	c.ensureHeightAbs(y + 2)
 	rect := image.Rect(c.margin, y, c.w-c.margin, y+2)
 	draw.Draw(c.img, rect, image.NewUniform(c.th.HRule), image.Point{}, draw.Src)
 	c.cursorY = y + 10
@@ -268,6 +310,7 @@ func (c *canvas) drawHRule() {
 
 func (c *canvas) drawBlockquoteBar(topY, height int) {
 	x0 := c.margin
+	c.ensureHeightAbs(topY + height)
 	rect := image.Rect(x0, topY, x0+4, topY+height)
 	draw.Draw(c.img, rect, image.NewUniform(c.th.QuoteBar), image.Point{}, draw.Src)
 }
@@ -280,6 +323,9 @@ func (c *canvas) drawCodeBlock(text string, left, right int, size float64) {
 	lines := wrapLines(mono, size, text, float64(right-left-2*pad))
 	lineHeight := int(size * 1.4)
 	height := len(lines)*lineHeight + 2*pad + 6
+
+	c.ensureHeightAbs(top + height + 6)
+
 	// bg
 	rect := image.Rect(left, top, right, top+height)
 	draw.Draw(c.img, rect, image.NewUniform(c.th.CodeBG), image.Point{}, draw.Src)
@@ -734,6 +780,7 @@ func (r *renderer) drawListMarker(marker string, baseline int, markerLeft, marke
 	if font == nil {
 		return
 	}
+	r.c.ensureHeightAbs(baseline + int(r.baseSize))
 	r.c.setFace(font, r.c.th.FG, r.baseSize)
 	width := measureWidth(font, r.baseSize, marker)
 	x := markerRight - int(width)
@@ -779,6 +826,12 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 			baselineSize = c.ptSize
 		}
 		baseline := c.cursorY + int(baselineSize)
+		lineHeight := int(baselineSize * 1.4)
+		if lineHeight <= 0 {
+			lineHeight = int(c.ptSize * 1.4)
+		}
+		c.ensureHeightAbs(baseline + lineHeight)
+
 		x := left
 		for _, w := range line {
 			if w.font == nil {
@@ -798,10 +851,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 			}
 			x += width
 		}
-		lineHeight := int(baselineSize * 1.4)
-		if lineHeight <= 0 {
-			lineHeight = int(c.ptSize * 1.4)
-		}
+
 		metrics = append(metrics, lineMetric{baseline: baseline, height: lineHeight})
 		c.cursorY += lineHeight
 		line = line[:0]
@@ -829,6 +879,9 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 			if tok.center && maxWidthInt > drawWidth {
 				x += (maxWidthInt - drawWidth) / 2
 			}
+
+			c.ensureHeightAbs(startY + drawHeight + int(c.ptSize*0.6))
+
 			rect := image.Rect(x, startY, x+drawWidth, startY+drawHeight)
 			draw.Draw(c.img, rect, img, bounds.Min, draw.Over)
 			baseline := startY + int(c.ptSize)
@@ -1108,11 +1161,13 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 			maxCellHeight = int(r.baseSize * 1.1)
 		}
 		rowBottom := rowTop + maxCellHeight + 2*cellPadding
+		r.c.ensureHeightAbs(rowBottom + border)
 		draw.Draw(r.c.img, image.Rect(tableLeft, rowBottom, tableRight, rowBottom+border), borderColor, image.Point{}, draw.Src)
 		y = rowBottom + border
 	}
 
 	tableBottom := y - border
+	r.c.ensureHeightAbs(tableBottom + border)
 	for col := 0; col <= colCount; col++ {
 		x := tableLeft + col*(colWidth+border)
 		draw.Draw(r.c.img, image.Rect(x, tableTop, x+border, tableBottom+border), borderColor, image.Point{}, draw.Src)
@@ -1267,12 +1322,23 @@ type RenderOptions struct {
 	LinkFootnotes  *bool
 	ImageFootnotes *bool
 	BaseDir        string
+	MaxHeight      int // Maximum permitted output height to prevent out-of-memory on large documents
 }
 
 // Render converts the provided Markdown document into a raster image using the
 // supplied options. Zero values enable sensible defaults (1024px width,
 // 48px margin, 16pt base font, light theme, bundled fonts).
-func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
+func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
+				resErr = err
+			} else {
+				panic(r)
+			}
+		}
+	}()
+
 	if opts.Width <= 0 {
 		opts.Width = 1024
 	}
@@ -1284,6 +1350,9 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 	}
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
+	}
+	if opts.MaxHeight == 0 {
+		opts.MaxHeight = 32768
 	}
 
 	// Fill in missing fonts using the bundled defaults.
@@ -1327,7 +1396,7 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 		}
 	}
 
-	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize)
+	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
 	r := &renderer{
 		c:              c,
 		baseSize:       opts.BaseFontSize,
@@ -1344,6 +1413,8 @@ func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
 	if used < opts.Margin+50 {
 		used = opts.Margin + 50
 	}
+
+	c.ensureHeightAbs(used)
 
 	img := image.NewRGBA(image.Rect(0, 0, opts.Width, used))
 	draw.Draw(img, img.Bounds(), c.img, image.Point{}, draw.Src)

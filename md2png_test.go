@@ -102,7 +102,7 @@ func TestRendererFootnoteCollection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
-	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
@@ -127,7 +127,7 @@ func TestRendererFootnoteToggles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
-	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
@@ -251,5 +251,63 @@ func TestRenderEmbedsRemoteImage(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected rendered output to include remote image pixels")
+	}
+}
+
+func TestMaxHeightLimit(t *testing.T) {
+	markdown := "Test height limit\n\n"
+	for i := 0; i < 1000; i++ {
+		markdown += "Line " + fmt.Sprint(i) + "\n\n"
+	}
+
+	_, err := Render([]byte(markdown), RenderOptions{MaxHeight: 2000})
+	if err == nil {
+		t.Fatalf("expected error due to height limit exceeded, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum output height limit exceeded") {
+		t.Fatalf("expected height limit error message, got: %v", err)
+	}
+}
+
+func TestRenderBeyond8192px(t *testing.T) {
+	markdown := "# Tall Document\n\n"
+	for i := 0; i < 1000; i++ {
+		markdown += "Paragraph line " + fmt.Sprint(i) + "\n\n"
+	}
+
+	// Add an explicit colored marker at the bottom that we can test for.
+	markdown += "## The End\n\nThis is the bottom text with a [link](https://example.com/bottom) at the end."
+
+	img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000})
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if img == nil {
+		t.Fatalf("expected image result")
+	}
+	if img.Bounds().Dy() < 10000 {
+		t.Fatalf("expected image height to be well over 8192px, got %d", img.Bounds().Dy())
+	}
+
+	// Ensure that meaningful pixels exist near the bottom of the image
+	// by searching for the link color which we added at the end of the markdown.
+	bounds := img.Bounds()
+	foundLinkPixel := false
+	// Start searching from the bottom upwards (last 200 pixels should cover it)
+	startY := bounds.Max.Y - 200
+	if startY < bounds.Min.Y {
+		startY = bounds.Min.Y
+	}
+	for y := startY; y < bounds.Max.Y && !foundLinkPixel; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if uint8(r>>8) == linkColor.R && uint8(g>>8) == linkColor.G && uint8(b>>8) == linkColor.B && uint8(a>>8) == linkColor.A {
+				foundLinkPixel = true
+				break
+			}
+		}
+	}
+	if !foundLinkPixel {
+		t.Fatalf("expected meaningful rendered pixels (link) near the bottom of a >8192px image")
 	}
 }
