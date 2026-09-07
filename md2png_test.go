@@ -269,6 +269,139 @@ func TestMaxHeightLimit(t *testing.T) {
 	}
 }
 
+func TestNegativeMaxHeight(t *testing.T) {
+	_, err := Render([]byte("# Hello"), RenderOptions{MaxHeight: -1})
+	if err == nil {
+		t.Fatalf("expected error for negative MaxHeight, got nil")
+	}
+	if !strings.Contains(err.Error(), "MaxHeight cannot be negative") {
+		t.Fatalf("expected specific negative MaxHeight error message, got: %v", err)
+	}
+}
+
+func TestRenderBeyond8192pxElements(t *testing.T) {
+	// 1. Image
+	t.Run("Image", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		block := image.NewRGBA(image.Rect(0, 0, 40, 20))
+		want := color.RGBA{R: 0xCC, G: 0x22, B: 0x22, A: 0xFF}
+		draw.Draw(block, block.Bounds(), image.NewUniform(want), image.Point{}, draw.Src)
+		imgPath := filepath.Join(tmpDir, "block.png")
+		file, err := os.Create(imgPath)
+		if err != nil {
+			t.Fatalf("create temp image: %v", err)
+		}
+		if err := png.Encode(file, block); err != nil {
+			_ = file.Close()
+			t.Fatalf("encode temp image: %v", err)
+		}
+		_ = file.Close()
+
+		markdown := "# Image Boundary\n\n"
+		for i := 0; i < 500; i++ {
+			markdown += "Spacer to push content down\n\n"
+		}
+		markdown += fmt.Sprintf("![local image](%s)\n\n", filepath.Base(imgPath))
+
+		img, err := Render([]byte(markdown), RenderOptions{BaseDir: tmpDir, MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		found := false
+		bounds := img.Bounds()
+		for y := 8192; y < bounds.Max.Y && !found; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B && uint8(a>>8) == want.A {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected embedded image pixels below 8192px")
+		}
+	})
+
+	// 2. Code Block
+	t.Run("CodeBlock", func(t *testing.T) {
+		markdown := "# Code Block Boundary\n\n"
+		for i := 0; i < 500; i++ {
+			markdown += "Spacer to push content down\n\n"
+		}
+		markdown += "```\n"
+		for i := 0; i < 50; i++ {
+			markdown += "func bottomCodeBlockLine() {}\n"
+		}
+		markdown += "```\n"
+
+		img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		// Check for code block background color below 8192
+		found := false
+		bounds := img.Bounds()
+		cR, cG, cB, cA := lightTheme.CodeBG.RGBA()
+		for y := 8192; y < bounds.Max.Y && !found; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if r == cR && g == cG && b == cB && a == cA {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected code block background pixels below 8192px")
+		}
+	})
+
+	// 3. Table
+	t.Run("Table", func(t *testing.T) {
+		markdown := "# Table Boundary\n\n"
+		for i := 0; i < 500; i++ {
+			markdown += "Spacer to push content down\n\n"
+		}
+		markdown += "| Col 1 | Col 2 |\n|---|---|\n"
+		for i := 0; i < 50; i++ {
+			markdown += fmt.Sprintf("| Val %d | [link](https://example.com) |\n", i)
+		}
+
+		img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		// Check for link color (inside the table cells) below 8192
+		found := false
+		bounds := img.Bounds()
+		for y := 8192; y < bounds.Max.Y && !found; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == linkColor.R && uint8(g>>8) == linkColor.G && uint8(b>>8) == linkColor.B && uint8(a>>8) == linkColor.A {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected table cell content (link pixels) below 8192px")
+		}
+	})
+}
+
 func TestRenderBeyond8192px(t *testing.T) {
 	markdown := "# Tall Document\n\n"
 	for i := 0; i < 1000; i++ {

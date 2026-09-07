@@ -58,6 +58,7 @@ Requires Go 1.22 or newer.
 | `-fontmono` | Monospace font TTF path | built-in Go Mono |
 | `-footnote-links` | Emit link targets as numbered footnotes | `true` |
 | `-footnote-images` | Emit image targets as numbered footnotes | `false` |
+| `-max-height` | Maximum output height in pixels (0 for unlimited) | 32768 |
 
 ### Examples
 
@@ -141,7 +142,7 @@ func main() {
 }
 ```
 
-`RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
+`RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, limits (`MaxHeight`), swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
 
 ---
 

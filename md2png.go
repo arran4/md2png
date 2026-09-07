@@ -1066,11 +1066,11 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 			// Let's create a pseudo-row just to pass to a logic, or adjust.
 			// The original code was:
 			/*
-			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
-				if tr, ok := child.(*extensionAST.TableRow); ok {
-					rows = append(rows, r.collectTableRow(tr, md, true))
+				for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+					if tr, ok := child.(*extensionAST.TableRow); ok {
+						rows = append(rows, r.collectTableRow(tr, md, true))
+					}
 				}
-			}
 			*/
 			// Since we know TableHeader directly contains TableCells, let's collect them!
 			var cells [][]textToken
@@ -1350,6 +1350,9 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 	}
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
+	}
+	if opts.MaxHeight < 0 {
+		return nil, errors.New("md2png: MaxHeight cannot be negative")
 	}
 	if opts.MaxHeight == 0 {
 		opts.MaxHeight = 32768
