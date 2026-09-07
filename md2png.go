@@ -29,6 +29,7 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
+
 // Simple, dependency-light Markdown -> raster image renderer.
 // Goals:
 //  - Pure Go binary (no JS, no Python)
@@ -37,6 +38,20 @@ import (
 //  - Export PNG, JPG, or GIF based on output extension
 //
 // Not a full HTML renderer; keep expectations practical.
+
+var (
+	ErrInvalidWidth    = errors.New("md2png: invalid width")
+	ErrInvalidMargin   = errors.New("md2png: invalid margin")
+	ErrInvalidFontSize = errors.New("md2png: invalid font size")
+	ErrNoDrawableWidth = errors.New("md2png: margin leaves no useful drawable width")
+	ErrResourceLimit   = errors.New("md2png: dimension exceeds resource limit")
+)
+
+const (
+	MaxAllowedWidth    = 32768
+	MaxAllowedFontSize = 1024
+)
+
 
 // ---- Styles & theme ----
 
@@ -68,6 +83,7 @@ var (
 	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
 	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
 )
+
 
 // ---- Font loading ----
 
@@ -473,6 +489,7 @@ const (
 	listMarkerWidth = 28
 	listMarkerGap   = 8
 )
+
 
 type textToken struct {
 	text      string
@@ -1294,6 +1311,7 @@ var (
 	DarkTheme  = darkTheme
 )
 
+
 // ThemeByName returns a built-in theme by name ("light" or "dark").
 func ThemeByName(name string) (Theme, error) {
 	switch strings.ToLower(name) {
@@ -1312,22 +1330,27 @@ func LoadFonts(cfg FontConfig) (Fonts, error) {
 	return loadFonts(cfg)
 }
 
-// RenderOptions configure how Markdown is rendered to an image.
+// RenderOptions configures the Markdown to image rendering process.
+// Zero values (or empty structs) will automatically populate with sensible defaults,
+// including a 1024px width, 48px margin, 16pt font, and a 32768px height limit.
 type RenderOptions struct {
-	Width          int
-	Margin         int
-	BaseFontSize   float64
-	Theme          Theme
-	Fonts          Fonts
-	LinkFootnotes  *bool
-	ImageFootnotes *bool
-	BaseDir        string
-	MaxHeight      int // Maximum permitted output height to prevent out-of-memory on large documents
+	Width          int     // Overall image width in pixels. Default is 1024, max is 32768.
+	Margin         int     // Border margin in pixels. Default is 48.
+	ZeroMargin     bool    // If true, intentionally use a 0 margin instead of the default.
+	BaseFontSize   float64 // Base font size in points. Default is 16, max is 1024.
+	Theme          Theme   // Color theme. Defaults to light theme.
+	Fonts          Fonts   // Font configuration. Defaults to bundled Go fonts.
+	LinkFootnotes  *bool   // Add footnotes for links. Defaults to true.
+	ImageFootnotes *bool   // Add footnotes for images. Defaults to false.
+	BaseDir        string  // Base directory for resolving local image paths.
+	MaxHeight      int     // Maximum permitted output height (default 32768) to prevent OOM.
 }
 
 // Render converts the provided Markdown document into a raster image using the
 // supplied options. Zero values enable sensible defaults (1024px width,
-// 48px margin, 16pt base font, light theme, bundled fonts).
+// 48px margin, 16pt base font, light theme, 32768px max height, bundled fonts).
+// Dimensions that are negative, excessively large (width > 32768, font > 1024),
+// or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
 func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1339,15 +1362,37 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 		}
 	}()
 
-	if opts.Width <= 0 {
+	if opts.Width < 0 {
+		return nil, ErrInvalidWidth
+	}
+	if opts.Width == 0 {
 		opts.Width = 1024
 	}
-	if opts.Margin <= 0 {
+	if opts.Width > MaxAllowedWidth {
+		return nil, ErrResourceLimit
+	}
+
+	if opts.Margin < 0 {
+		return nil, ErrInvalidMargin
+	}
+	if opts.Margin == 0 && !opts.ZeroMargin {
 		opts.Margin = 48
 	}
-	if opts.BaseFontSize <= 0 {
+
+	if opts.Width <= 2*opts.Margin {
+		return nil, ErrNoDrawableWidth
+	}
+
+	if opts.BaseFontSize < 0 {
+		return nil, ErrInvalidFontSize
+	}
+	if opts.BaseFontSize == 0 {
 		opts.BaseFontSize = 16
 	}
+	if opts.BaseFontSize > MaxAllowedFontSize {
+		return nil, ErrResourceLimit
+	}
+
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
 	}

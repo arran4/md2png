@@ -17,16 +17,16 @@ import (
 func main() {
 	in := flag.String("in", "", "Input Markdown file (default: stdin if empty)")
 	out := flag.String("out", "out.png", "Output image file (.png, .jpg, or .gif)")
-	width := flag.Int("width", 1024, "Output image width in pixels")
-	margin := flag.Int("margin", 48, "Margin in pixels")
-	pt := flag.Float64("pt", 16, "Base font size in points (paragraph)")
+	width := flag.Int("width", 0, "Output image width in pixels (0 for default)")
+	margin := flag.Int("margin", 0, "Margin in pixels (0 for default)")
+	pt := flag.Float64("pt", 0, "Base font size in points (paragraph) (0 for default)")
 	theme := flag.String("theme", "light", "Theme: light|dark")
 	fontRegular := flag.String("font", "", "Path to TTF for regular text (optional; default Go Regular)")
 	fontBold := flag.String("fontbold", "", "Path to TTF for bold text (optional; default Go Bold)")
 	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
 	footnoteLinks := flag.Bool("footnote-links", true, "Add footnotes for link destinations")
 	footnoteImages := flag.Bool("footnote-images", false, "Add footnotes for image destinations")
-	maxHeight := flag.Int("max-height", 32768, "Maximum output height in pixels (0 for default)")
+	maxHeight := flag.Int("max-height", 0, "Maximum output height in pixels (0 for default)")
 	flag.Parse()
 
 	th, err := md2png.ThemeByName(*theme)
@@ -67,9 +67,17 @@ func main() {
 		fatal(err)
 	}
 
+	marginSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "margin" {
+			marginSet = true
+		}
+	})
+
 	img, err := md2png.Render(data, md2png.RenderOptions{
 		Width:          *width,
 		Margin:         *margin,
+		ZeroMargin:     *margin == 0 && marginSet,
 		BaseFontSize:   *pt,
 		Theme:          th,
 		Fonts:          fonts,
