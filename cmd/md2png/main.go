@@ -26,7 +26,7 @@ func main() {
 	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
 	footnoteLinks := flag.Bool("footnote-links", true, "Add footnotes for link destinations")
 	footnoteImages := flag.Bool("footnote-images", false, "Add footnotes for image destinations")
-	maxHeight := flag.Int("max-height", 32768, "Maximum output height in pixels (0 for unlimited)")
+	maxHeight := flag.Int("max-height", 32768, "Maximum output height in pixels (0 for default)")
 	flag.Parse()
 
 	th, err := md2png.ThemeByName(*theme)
