@@ -12,12 +12,12 @@ import (
 	"github.com/arran4/md2png"
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/lifecycle"
 	"golang.org/x/mobile/event/mouse"
 	"golang.org/x/mobile/event/paint"
 	"golang.org/x/mobile/event/size"
-	xdraw "golang.org/x/image/draw"
 	"image/draw"
 )
 
@@ -32,6 +32,7 @@ func main() {
 	fontMono := flag.String("fontmono", "", "Path to TTF for mono/code (optional; default Go Mono)")
 	footnoteLinks := flag.Bool("footnote-links", true, "Add footnotes for link destinations")
 	footnoteImages := flag.Bool("footnote-images", false, "Add footnotes for image destinations")
+	maxHeight := flag.Int("max-height", 32768, "Maximum output height in pixels (0 for default)")
 	flag.Parse()
 
 	th, err := md2png.ThemeByName(*theme)
@@ -92,6 +93,7 @@ func main() {
 		LinkFootnotes:  footnoteLinks,
 		ImageFootnotes: footnoteImages,
 		BaseDir:        baseDir,
+		MaxHeight:      *maxHeight,
 	})
 	if err != nil {
 		fatal(err)

@@ -102,7 +102,7 @@ func TestRendererFootnoteCollection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
-	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
@@ -127,7 +127,7 @@ func TestRendererFootnoteToggles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
-	c := newCanvas(640, 48, lightTheme, fonts, 16)
+	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
@@ -251,5 +251,280 @@ func TestRenderEmbedsRemoteImage(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected rendered output to include remote image pixels")
+	}
+}
+
+func TestMaxHeightLimit(t *testing.T) {
+	markdown := "Test height limit\n\n"
+	for i := 0; i < 1000; i++ {
+		markdown += "Line " + fmt.Sprint(i) + "\n\n"
+	}
+
+	_, err := Render([]byte(markdown), RenderOptions{MaxHeight: 2000})
+	if err == nil {
+		t.Fatalf("expected error due to height limit exceeded, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum output height limit exceeded") {
+		t.Fatalf("expected height limit error message, got: %v", err)
+	}
+}
+
+func TestNegativeMaxHeight(t *testing.T) {
+	_, err := Render([]byte("# Hello"), RenderOptions{MaxHeight: -1})
+	if err == nil {
+		t.Fatalf("expected error for negative MaxHeight, got nil")
+	}
+	if !strings.Contains(err.Error(), "MaxHeight cannot be negative") {
+		t.Fatalf("expected specific negative MaxHeight error message, got: %v", err)
+	}
+}
+
+func TestZeroMaxHeightDefaults(t *testing.T) {
+	// 0 defaults to 32768, so parsing 2000 lines (which takes ~70000 pixels) should fail
+	markdown := "Test height limit\n\n"
+	for i := 0; i < 2000; i++ {
+		markdown += "Line " + fmt.Sprint(i) + "\n\n"
+	}
+
+	_, err := Render([]byte(markdown), RenderOptions{MaxHeight: 0})
+	if err == nil {
+		t.Fatalf("expected error due to height limit exceeded on default 0 (32768), got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum output height limit exceeded") {
+		t.Fatalf("expected height limit error message, got: %v", err)
+	}
+}
+
+func TestRenderBeyond8192pxElements(t *testing.T) {
+	// We want to force the cursor specifically near the 8192px boundary, then
+	// have the target block start just *above* 8192 and finish *below* 8192.
+	// Since font rendering logic can be complex to guess exact pixel heights,
+	// we use exact canvas measurement inside the test loops.
+
+	getCursorHeight := func(md []byte) int {
+		// Do a quick dry-run render to see how tall it gets.
+		img, _ := Render(md, RenderOptions{MaxHeight: 60000, Width: 400})
+		if img == nil {
+			return 0
+		}
+		return img.Bounds().Dy()
+	}
+
+	buildSpacersTo := func(target int) string {
+		markdown := "# Boundary\n\n"
+		for {
+			nextMarkdown := markdown + "Spacer to push content down\n\n"
+			height := getCursorHeight([]byte(nextMarkdown))
+			if height > target {
+				break
+			}
+			markdown = nextMarkdown
+		}
+		return markdown
+	}
+
+	// 1. Image
+	t.Run("Image", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Make a very tall image so it easily spans across the boundary.
+		block := image.NewRGBA(image.Rect(0, 0, 40, 600))
+		want := color.RGBA{R: 0xCC, G: 0x22, B: 0x22, A: 0xFF}
+		draw.Draw(block, block.Bounds(), image.NewUniform(want), image.Point{}, draw.Src)
+		imgPath := filepath.Join(tmpDir, "block.png")
+		file, err := os.Create(imgPath)
+		if err != nil {
+			t.Fatalf("create temp image: %v", err)
+		}
+		if err := png.Encode(file, block); err != nil {
+			_ = file.Close()
+			t.Fatalf("encode temp image: %v", err)
+		}
+		_ = file.Close()
+
+		// Get exactly under 8192
+		markdown := buildSpacersTo(8150)
+		markdown += fmt.Sprintf("![local image](%s)\n\n", filepath.Base(imgPath))
+
+		img, err := Render([]byte(markdown), RenderOptions{BaseDir: tmpDir, MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		// Ensure we see image pixels *above* 8192 (i.e. the image started before the growth bound)
+		foundAbove := false
+		bounds := img.Bounds()
+		for y := bounds.Min.Y; y < 8192 && !foundAbove; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B && uint8(a>>8) == want.A {
+					foundAbove = true
+					break
+				}
+			}
+		}
+		if !foundAbove {
+			t.Fatalf("expected embedded image pixels ABOVE 8192px (image should span across boundary)")
+		}
+
+		// Ensure we see image pixels *below* 8192 (i.e. the image successfully forced a growth)
+		foundBelow := false
+		for y := 8192; y < bounds.Max.Y && !foundBelow; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B && uint8(a>>8) == want.A {
+					foundBelow = true
+					break
+				}
+			}
+		}
+		if !foundBelow {
+			t.Fatalf("expected embedded image pixels BELOW 8192px")
+		}
+	})
+
+	// 2. Code Block
+	t.Run("CodeBlock", func(t *testing.T) {
+		markdown := buildSpacersTo(8150)
+		markdown += "```\n"
+		for i := 0; i < 50; i++ {
+			markdown += "func bottomCodeBlockLine() {}\n"
+		}
+		markdown += "```\n"
+
+		img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		bounds := img.Bounds()
+		cR, cG, cB, cA := lightTheme.CodeBG.RGBA()
+
+		// Above boundary
+		foundAbove := false
+		for y := bounds.Min.Y; y < 8192 && !foundAbove; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if r == cR && g == cG && b == cB && a == cA {
+					foundAbove = true
+					break
+				}
+			}
+		}
+		if !foundAbove {
+			t.Fatalf("expected code block background pixels ABOVE 8192px (codeblock should span across boundary)")
+		}
+
+		// Below boundary
+		foundBelow := false
+		for y := 8192; y < bounds.Max.Y && !foundBelow; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if r == cR && g == cG && b == cB && a == cA {
+					foundBelow = true
+					break
+				}
+			}
+		}
+		if !foundBelow {
+			t.Fatalf("expected code block background pixels BELOW 8192px")
+		}
+	})
+
+	// 3. Table
+	t.Run("Table", func(t *testing.T) {
+		markdown := buildSpacersTo(8150)
+		markdown += "| Col 1 | Col 2 |\n|---|---|\n"
+		for i := 0; i < 50; i++ {
+			markdown += fmt.Sprintf("| Val %d | [link](https://example.com) |\n", i)
+		}
+
+		img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000, Width: 400})
+		if err != nil {
+			t.Fatalf("render failed: %v", err)
+		}
+		if img.Bounds().Dy() <= 8192 {
+			t.Fatalf("expected image height > 8192px, got %d", img.Bounds().Dy())
+		}
+
+		bounds := img.Bounds()
+
+		// Above boundary
+		foundAbove := false
+		for y := bounds.Min.Y; y < 8192 && !foundAbove; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == linkColor.R && uint8(g>>8) == linkColor.G && uint8(b>>8) == linkColor.B && uint8(a>>8) == linkColor.A {
+					foundAbove = true
+					break
+				}
+			}
+		}
+		if !foundAbove {
+			t.Fatalf("expected table cell content (link pixels) ABOVE 8192px (table should span across boundary)")
+		}
+
+		// Below boundary
+		foundBelow := false
+		for y := 8192; y < bounds.Max.Y && !foundBelow; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if uint8(r>>8) == linkColor.R && uint8(g>>8) == linkColor.G && uint8(b>>8) == linkColor.B && uint8(a>>8) == linkColor.A {
+					foundBelow = true
+					break
+				}
+			}
+		}
+		if !foundBelow {
+			t.Fatalf("expected table cell content (link pixels) BELOW 8192px")
+		}
+	})
+}
+
+func TestRenderBeyond8192px(t *testing.T) {
+	markdown := "# Tall Document\n\n"
+	for i := 0; i < 1000; i++ {
+		markdown += "Paragraph line " + fmt.Sprint(i) + "\n\n"
+	}
+
+	// Add an explicit colored marker at the bottom that we can test for.
+	markdown += "## The End\n\nThis is the bottom text with a [link](https://example.com/bottom) at the end."
+
+	img, err := Render([]byte(markdown), RenderOptions{MaxHeight: 60000})
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if img == nil {
+		t.Fatalf("expected image result")
+	}
+	if img.Bounds().Dy() < 10000 {
+		t.Fatalf("expected image height to be well over 8192px, got %d", img.Bounds().Dy())
+	}
+
+	// Ensure that meaningful pixels exist near the bottom of the image
+	// by searching for the link color which we added at the end of the markdown.
+	bounds := img.Bounds()
+	foundLinkPixel := false
+	// Start searching from the bottom upwards (last 200 pixels should cover it)
+	startY := bounds.Max.Y - 200
+	if startY < bounds.Min.Y {
+		startY = bounds.Min.Y
+	}
+	for y := startY; y < bounds.Max.Y && !foundLinkPixel; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if uint8(r>>8) == linkColor.R && uint8(g>>8) == linkColor.G && uint8(b>>8) == linkColor.B && uint8(a>>8) == linkColor.A {
+				foundLinkPixel = true
+				break
+			}
+		}
+	}
+	if !foundLinkPixel {
+		t.Fatalf("expected meaningful rendered pixels (link) near the bottom of a >8192px image")
 	}
 }
