@@ -208,6 +208,9 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 	if startH < 64 {
 		startH = 64
 	}
+	if maxH > 0 && startH > maxH {
+		startH = maxH
+	}
 
 	if int64(width)*int64(startH) > maxTotalPixels {
 		startH = int(maxTotalPixels / int64(width))

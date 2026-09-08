@@ -76,33 +76,17 @@ func TestValidationAndDefaults(t *testing.T) {
 }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	// Simulate the flag parsing block from main.go
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cliOpts := RegisterFlags(fs)
 
-	width := fs.Int("width", 0, "Output image width in pixels (0 for default)")
-	margin := fs.Int("margin", 0, "Margin in pixels (0 for default)")
-
-	// Parse with explicit margin 0
-	err := fs.Parse([]string{"-margin", "0", "-width", "800"})
+	err := fs.Parse([]string{"-margin", "0", "-width", "800"}) // -pt is omitted
 	if err != nil {
 		t.Fatalf("unexpected flag parse error: %v", err)
 	}
 
-	marginSet := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "margin" {
-			marginSet = true
-		}
-	})
-
-	if !marginSet {
-		t.Errorf("expected margin to be recorded as set")
-	}
-
-	opts := RenderOptions{
-		Width:      *width,
-		Margin:     *margin,
-		ZeroMargin: *margin == 0 && marginSet,
+	opts, err := cliOpts.ToRenderOptions(fs, "")
+	if err != nil {
+		t.Fatalf("unexpected ToRenderOptions error: %v", err)
 	}
 
 	if opts.Width != 800 {
@@ -113,6 +97,33 @@ func TestCLIValidationBehavior(t *testing.T) {
 	}
 	if !opts.ZeroMargin {
 		t.Errorf("expected ZeroMargin to be true")
+	}
+	// Run render to ensure validation completes
+	img, err := Render([]byte("test"), opts)
+	if err != nil {
+		t.Fatalf("unexpected render error: %v", err)
+	}
+	if img == nil {
+		t.Fatalf("expected image, got nil")
+	}
+
+	// Test with explicit -pt 0
+	fs2 := flag.NewFlagSet("test2", flag.ContinueOnError)
+	cliOpts2 := RegisterFlags(fs2)
+	err2 := fs2.Parse([]string{"-pt", "0"})
+	if err2 != nil {
+		t.Fatalf("unexpected flag parse error: %v", err2)
+	}
+	opts2, err2 := cliOpts2.ToRenderOptions(fs2, "")
+	if err2 != nil {
+		t.Fatalf("unexpected ToRenderOptions error: %v", err2)
+	}
+	img2, err2 := Render([]byte("test"), opts2)
+	if err2 != nil {
+		t.Fatalf("unexpected render error for explicit 0: %v", err2)
+	}
+	if img2 == nil {
+		t.Fatalf("expected image, got nil")
 	}
 }
 
