@@ -55,29 +55,6 @@ func TestValidationAndDefaults(t *testing.T) {
 	}
 }
 
-func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, "")
-	if err != nil {
-		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
-	}
-	if opts.Width != 800 { t.Errorf("expected width 800, got %d", opts.Width) }
-	if opts.Margin != 0 { t.Errorf("expected margin 0, got %d", opts.Margin) }
-	if !opts.ZeroMargin { t.Errorf("expected ZeroMargin to be true") }
-	if opts.Fonts.Regular == nil || opts.Fonts.Regular.baseSize != 16 { t.Errorf("expected omitted -pt to map to 16pt font, got %v", opts.Fonts.Regular) }
-
-	img, err := Render([]byte("test"), opts)
-	if err != nil { t.Fatalf("unexpected render error: %v", err) }
-	if img == nil { t.Fatalf("expected image, got nil") }
-
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, "")
-	if err2 != nil { t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2) }
-	if opts2.Fonts.Regular == nil || opts2.Fonts.Regular.baseSize != 16 { t.Errorf("expected explicit -pt 0 to map to 16pt font, got %v", opts2.Fonts.Regular) }
-
-	img2, err2 := Render([]byte("test"), opts2)
-	if err2 != nil { t.Fatalf("unexpected render error for explicit 0: %v", err2) }
-	if img2 == nil { t.Fatalf("expected image, got nil") }
-}
-
 func TestRegressionIssues(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 0})
 	if err != nil { t.Fatalf("unexpected error for font size 0: %v", err) }

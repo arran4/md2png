@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/arran4/md2png"
 	"github.com/arran4/md2png/cmd"
 	"github.com/arran4/md2png/cmd/md2view/templates"
+	"github.com/arran4/md2png/internal/cli"
 )
 
 type Cmd interface {
@@ -204,7 +204,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := md2png.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()

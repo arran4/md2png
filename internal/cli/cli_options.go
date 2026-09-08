@@ -1,7 +1,11 @@
-package md2png
+package cli
+
+import (
+	"github.com/arran4/md2png"
+)
 
 // ConvertCommandArgsToRenderOptions tests the logic for mapping pointer arguments
-// from go-subcommand into a RenderOptions struct, exactly as Md2png/Md2view do.
+// from go-subcommand into a md2png.RenderOptions struct, exactly as Md2png/Md2view do.
 func ConvertCommandArgsToRenderOptions(
 	width *int,
 	margin *int,
@@ -14,17 +18,17 @@ func ConvertCommandArgsToRenderOptions(
 	footnoteImages *bool,
 	maxHeight *int,
 	baseDir string,
-) (RenderOptions, error) {
+) (md2png.RenderOptions, error) {
 	themeName := "light"
 	if theme != nil {
 		themeName = *theme
 	}
-	th, err := ThemeByName(themeName)
+	th, err := md2png.ThemeByName(themeName)
 	if err != nil {
-		return RenderOptions{}, err
+		return md2png.RenderOptions{}, err
 	}
 
-	cfg := FontConfig{}
+	cfg := md2png.FontConfig{}
 	if fontRegular != nil {
 		cfg.RegularPath = *fontRegular
 	}
@@ -38,12 +42,12 @@ func ConvertCommandArgsToRenderOptions(
 		cfg.SizeBase = *pt
 	}
 
-	fonts, err := LoadFonts(cfg)
+	fonts, err := md2png.LoadFonts(cfg)
 	if err != nil {
-		return RenderOptions{}, err
+		return md2png.RenderOptions{}, err
 	}
 
-	opts := RenderOptions{
+	opts := md2png.RenderOptions{
 		Theme:   th,
 		Fonts:   fonts,
 		BaseDir: baseDir,

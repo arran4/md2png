@@ -1,6 +1,8 @@
-package md2png
+package cli
 
 import (
+	"github.com/arran4/md2png"
+
 	"fmt"
 	"image"
 	"io"
@@ -78,7 +80,7 @@ func Md2view(
 		return err
 	}
 
-	img, err := Render(data, opts)
+	img, err := md2png.Render(data, opts)
 	if err != nil {
 		return err
 	}
@@ -144,10 +146,11 @@ func Md2view(
 				w.Publish()
 			case mouse.Event:
 				if e.Direction == mouse.DirStep {
-					if e.Button == mouse.ButtonWheelUp {
+					switch e.Button {
+					case mouse.ButtonWheelUp:
 						offset.Y += 40
 						w.Send(paint.Event{})
-					} else if e.Button == mouse.ButtonWheelDown {
+					case mouse.ButtonWheelDown:
 						offset.Y -= 40
 						w.Send(paint.Event{})
 					}

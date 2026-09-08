@@ -1,6 +1,8 @@
-package md2png
+package cli
 
 import (
+	"github.com/arran4/md2png"
+
 	"errors"
 	"image/gif"
 	"image/jpeg"
@@ -65,7 +67,7 @@ func Md2png(
 		return err
 	}
 
-	img, err := Render(data, opts)
+	img, err := md2png.Render(data, opts)
 	if err != nil {
 		return err
 	}
