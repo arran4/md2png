@@ -9,7 +9,7 @@
 - Parses Markdown with `goldmark` and draws the result straight to an image buffer.
 - Handles headings (H1–H5), paragraphs, ordered and unordered lists, bold text, code blocks, block quotes, tables, and horizontal rules.
 - Dark and light themes, adjustable width, margin, and point size.
-- Optional custom fonts: `---font`, `---fontbold`, `---fontmono`.
+- Optional custom fonts: `--font`, `--fontbold`, `--fontmono`.
 - Output format follows the `--out` extension.
 
 ---
@@ -53,12 +53,12 @@ Requires Go 1.22 or newer.
 | `--margin` | Margin in pixels | 48 |
 | `--pt` | Base font size (points) | 16 |
 | `--theme` | `light` or `dark` | `light` |
-| `--font` | Regular font TTF path | built--in Go Regular |
-| `--fontbold` | Bold font TTF path | built--in Go Bold |
-| `--fontmono` | Monospace font TTF path | built--in Go Mono |
-| `-footnote-links` | Emit link targets as numbered footnotes | `true` |
-| `-footnote-images` | Emit image targets as numbered footnotes | `false` |
-| `-max-height` | Maximum output height in pixels (0 for default) | 32768 |
+| `--font` | Regular font TTF path | built-in Go Regular |
+| `--fontbold` | Bold font TTF path | built-in Go Bold |
+| `--fontmono` | Monospace font TTF path | built-in Go Mono |
+| `--footnote-links` | Emit link targets as numbered footnotes | `true` |
+| `--footnote-images` | Emit image targets as numbered footnotes | `false` |
+| `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
 
 ### Examples
 

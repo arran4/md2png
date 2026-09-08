@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-func ptrInt(v int) *int { return &v }
-func ptrFloat64(v float64) *float64 { return &v }
 
 func TestValidationAndDefaults(t *testing.T) {
 	img, err := Render([]byte("test"), RenderOptions{})

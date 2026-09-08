@@ -2,7 +2,6 @@
 
 package main
 
-//go:generate sh -c "command -v gosubc >/dev/null 2>&1 && gosubc generate || go run github.com/arran4/go-subcommand/cmd/gosubc generate"
 
 import (
 	"fmt"
@@ -20,8 +19,8 @@ var (
 // Provenance
 var (
 	GeneratorVersion = "v0.0.29"
-	GeneratedAt      = "2026-09-08T08:22:07Z"
-	ProjectCommit    = "1bbcbac0f44ab4a63680557f16ec90a825bbf6cb"
+	GeneratedAt      = ""
+	ProjectCommit    = ""
 )
 
 func main() {
