@@ -20,25 +20,16 @@ func TestRoot_Execute(t *testing.T) {
 
 	args := []string{}
 	args = append(args, "--in")
-	args = append(args, "test")
 	args = append(args, "--width")
-	args = append(args, "1")
 	args = append(args, "--margin")
-	args = append(args, "1")
 	args = append(args, "--pt")
-	args = append(args, "1.5")
 	args = append(args, "--theme")
-	args = append(args, "test")
 	args = append(args, "--fontRegular")
-	args = append(args, "test")
 	args = append(args, "--fontBold")
-	args = append(args, "test")
 	args = append(args, "--fontMono")
-	args = append(args, "test")
 	args = append(args, "--footnoteLinks")
 	args = append(args, "--footnoteImages")
 	args = append(args, "--maxHeight")
-	args = append(args, "1")
 
 	err = cmd.Execute(args)
 	if err != nil {
