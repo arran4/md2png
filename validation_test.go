@@ -3,6 +3,7 @@ package md2png
 import (
 	"flag"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -131,10 +132,25 @@ func TestRegressionIssues(t *testing.T) {
 		t.Errorf("expected ErrNoDrawableWidth for max-int margin, got %v", err)
 	}
 
-	// 3. Huge width/height combinations
-	_, err = Render([]byte("test"), RenderOptions{Width: 32768, MaxHeight: 32768})
-	if err != ErrResourceLimit {
-		t.Errorf("expected ErrResourceLimit for huge area, got %v", err)
+	// 3. Normal wide document succeeds despite huge ceiling
+	img, err := Render([]byte("test"), RenderOptions{Width: 4096})
+	if err != nil {
+		t.Errorf("unexpected error for 4096 width: %v", err)
+	}
+	if img != nil && img.Bounds().Dx() != 4096 {
+		t.Errorf("expected 4096 width, got %d", img.Bounds().Dx())
+	}
+
+	// 3b. Genuine huge allocation fails (via pixel budget panic conversion to error)
+	largeMD := "test\n\n"
+	for i := 0; i < 20000; i++ {
+		largeMD += "test\n\n"
+	}
+	_, err = Render([]byte(largeMD), RenderOptions{Width: 32768, MaxHeight: 32768})
+	if err == nil {
+		t.Errorf("expected error for genuine huge allocation, got nil")
+	} else if !strings.Contains(err.Error(), "pixel budget") {
+		t.Errorf("expected pixel budget error, got %v", err)
 	}
 
 	// 4. NaN base font size

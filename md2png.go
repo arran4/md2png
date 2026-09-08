@@ -198,6 +198,9 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 	if startH > maxH {
 		startH = maxH
 	}
+	if int64(width)*int64(startH) > MaxTotalPixels {
+		startH = int(MaxTotalPixels / int64(width))
+	}
 	// Start tall; we'll grow later if needed
 	img := image.NewRGBA(image.Rect(0, 0, width, startH))
 	dc := freetype.NewContext()
@@ -240,6 +243,13 @@ func (c *canvas) ensureHeightAbs(targetY int) {
 	}
 	if c.maxH > 0 && newH > c.maxH {
 		newH = c.maxH
+	}
+
+	if int64(c.w)*int64(newH) > MaxTotalPixels {
+		newH = int(MaxTotalPixels / int64(c.w))
+	}
+	if targetY > newH {
+		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d, pixel budget)", targetY, newH))
 	}
 
 	newImg := image.NewRGBA(image.Rect(0, 0, c.w, newH))
@@ -1405,10 +1415,6 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 		opts.MaxHeight = 32768
 	}
 	if opts.MaxHeight > MaxAllowedHeight {
-		return nil, ErrResourceLimit
-	}
-
-	if int64(opts.Width)*int64(opts.MaxHeight) > MaxTotalPixels {
 		return nil, ErrResourceLimit
 	}
 
