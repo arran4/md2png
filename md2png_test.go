@@ -274,7 +274,7 @@ func TestNegativeMaxHeight(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for negative MaxHeight, got nil")
 	}
-	if !strings.Contains(err.Error(), "MaxHeight cannot be negative") {
+	if !strings.Contains(err.Error(), "invalid max height") {
 		t.Fatalf("expected specific negative MaxHeight error message, got: %v", err)
 	}
 }

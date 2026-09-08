@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,7 +30,6 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-
 // Simple, dependency-light Markdown -> raster image renderer.
 // Goals:
 //  - Pure Go binary (no JS, no Python)
@@ -40,18 +40,20 @@ import (
 // Not a full HTML renderer; keep expectations practical.
 
 var (
-	ErrInvalidWidth    = errors.New("md2png: invalid width")
-	ErrInvalidMargin   = errors.New("md2png: invalid margin")
-	ErrInvalidFontSize = errors.New("md2png: invalid font size")
-	ErrNoDrawableWidth = errors.New("md2png: margin leaves no useful drawable width")
-	ErrResourceLimit   = errors.New("md2png: dimension exceeds resource limit")
+	ErrInvalidWidth     = errors.New("md2png: invalid width")
+	ErrInvalidMargin    = errors.New("md2png: invalid margin")
+	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
+	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
+	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
+	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
 )
 
 const (
 	MaxAllowedWidth    = 32768
+	MaxAllowedHeight   = 131072
+	MaxTotalPixels     = 67108864 // 64 million pixels, e.g., 2048x32768
 	MaxAllowedFontSize = 1024
 )
-
 
 // ---- Styles & theme ----
 
@@ -83,7 +85,6 @@ var (
 	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
 	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
 )
-
 
 // ---- Font loading ----
 
@@ -120,6 +121,9 @@ func loadFontAndFace(ttfBytes []byte, size float64) (*FontAndFace, error) {
 }
 
 func loadFonts(cfg FontConfig) (Fonts, error) {
+	if cfg.SizeBase <= 0 || math.IsNaN(cfg.SizeBase) {
+		cfg.SizeBase = 16
+	}
 	var f Fonts
 	var err error
 
@@ -489,7 +493,6 @@ const (
 	listMarkerWidth = 28
 	listMarkerGap   = 8
 )
-
 
 type textToken struct {
 	text      string
@@ -1311,7 +1314,6 @@ var (
 	DarkTheme  = darkTheme
 )
 
-
 // ThemeByName returns a built-in theme by name ("light" or "dark").
 func ThemeByName(name string) (Theme, error) {
 	switch strings.ToLower(name) {
@@ -1379,11 +1381,11 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 		opts.Margin = 48
 	}
 
-	if opts.Width <= 2*opts.Margin {
+	if opts.Margin >= (opts.Width+1)/2 {
 		return nil, ErrNoDrawableWidth
 	}
 
-	if opts.BaseFontSize < 0 {
+	if opts.BaseFontSize < 0 || math.IsNaN(opts.BaseFontSize) {
 		return nil, ErrInvalidFontSize
 	}
 	if opts.BaseFontSize == 0 {
@@ -1397,10 +1399,17 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 		opts.Theme = lightTheme
 	}
 	if opts.MaxHeight < 0 {
-		return nil, errors.New("md2png: MaxHeight cannot be negative")
+		return nil, ErrInvalidMaxHeight
 	}
 	if opts.MaxHeight == 0 {
 		opts.MaxHeight = 32768
+	}
+	if opts.MaxHeight > MaxAllowedHeight {
+		return nil, ErrResourceLimit
+	}
+
+	if int64(opts.Width)*int64(opts.MaxHeight) > MaxTotalPixels {
+		return nil, ErrResourceLimit
 	}
 
 	// Fill in missing fonts using the bundled defaults.

@@ -2,6 +2,7 @@ package md2png
 
 import (
 	"flag"
+	"math"
 	"testing"
 )
 
@@ -14,9 +15,9 @@ func TestValidationAndDefaults(t *testing.T) {
 	if img.Bounds().Dx() != 1024 {
 		t.Errorf("expected default width 1024, got %d", img.Bounds().Dx())
 	}
-    // Margin defaults to 48. This means the content is offset by 48.
-    // It's a bit harder to test margin exactly by image output unless we inspect pixels,
-    // but the error-free compilation is a good start.
+	// Margin defaults to 48. This means the content is offset by 48.
+	// It's a bit harder to test margin exactly by image output unless we inspect pixels,
+	// but the error-free compilation is a good start.
 
 	// Explicit zero margin
 	imgZero, err := Render([]byte("test"), RenderOptions{Width: 200, Margin: 0, ZeroMargin: true})
@@ -39,7 +40,7 @@ func TestValidationAndDefaults(t *testing.T) {
 		t.Errorf("expected ErrInvalidMargin, got %v", err)
 	}
 
-    // Negative font size
+	// Negative font size
 	_, err = Render([]byte("test"), RenderOptions{BaseFontSize: -1})
 	if err != ErrInvalidFontSize {
 		t.Errorf("expected ErrInvalidFontSize, got %v", err)
@@ -72,7 +73,6 @@ func TestValidationAndDefaults(t *testing.T) {
 		t.Errorf("expected ErrResourceLimit for excessive font size, got %v", err)
 	}
 }
-
 
 func TestCLIValidationBehavior(t *testing.T) {
 	// Simulate the flag parsing block from main.go
@@ -112,5 +112,40 @@ func TestCLIValidationBehavior(t *testing.T) {
 	}
 	if !opts.ZeroMargin {
 		t.Errorf("expected ZeroMargin to be true")
+	}
+}
+
+func TestRegressionIssues(t *testing.T) {
+	// 1. Omitted/explicit -pt 0 for LoadFonts
+	fonts, err := LoadFonts(FontConfig{SizeBase: 0})
+	if err != nil {
+		t.Fatalf("unexpected error for font size 0: %v", err)
+	}
+	if fonts.Regular == nil {
+		t.Fatalf("expected fonts to be loaded for size 0 (fallback to 16)")
+	}
+
+	// 2. Max-int margin (overflow check)
+	_, err = Render([]byte("test"), RenderOptions{Width: 100, Margin: 1 << 30})
+	if err != ErrNoDrawableWidth {
+		t.Errorf("expected ErrNoDrawableWidth for max-int margin, got %v", err)
+	}
+
+	// 3. Huge width/height combinations
+	_, err = Render([]byte("test"), RenderOptions{Width: 32768, MaxHeight: 32768})
+	if err != ErrResourceLimit {
+		t.Errorf("expected ErrResourceLimit for huge area, got %v", err)
+	}
+
+	// 4. NaN base font size
+	_, err = Render([]byte("test"), RenderOptions{BaseFontSize: math.NaN()})
+	if err != ErrInvalidFontSize {
+		t.Errorf("expected ErrInvalidFontSize for NaN, got %v", err)
+	}
+
+	// 5. Negative MaxHeight
+	_, err = Render([]byte("test"), RenderOptions{MaxHeight: -10})
+	if err != ErrInvalidMaxHeight {
+		t.Errorf("expected ErrInvalidMaxHeight, got %v", err)
 	}
 }
