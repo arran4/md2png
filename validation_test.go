@@ -142,11 +142,13 @@ func TestRegressionIssues(t *testing.T) {
 	}
 
 	// 3b. Genuine huge allocation fails (via pixel budget panic conversion to error)
-	largeMD := "test\n\n"
-	for i := 0; i < 20000; i++ {
-		largeMD += "test\n\n"
-	}
-	_, err = Render([]byte(largeMD), RenderOptions{Width: 32768, MaxHeight: 32768})
+	// Test the pixel budget seam without massive allocations in memory
+	origPixelBudget := maxTotalPixels
+	maxTotalPixels = 100 * 100 // 10k pixels max
+	defer func() { maxTotalPixels = origPixelBudget }()
+
+	largeMD := "test\n\ntest\n\ntest\n\ntest\n\ntest\n\ntest"
+	_, err = Render([]byte(largeMD), RenderOptions{Width: 100, MaxHeight: 32768})
 	if err == nil {
 		t.Errorf("expected error for genuine huge allocation, got nil")
 	} else if !strings.Contains(err.Error(), "pixel budget") {

@@ -55,6 +55,8 @@ const (
 	MaxAllowedFontSize = 1024
 )
 
+var maxTotalPixels = int64(MaxTotalPixels) // Overridable for testing
+
 // ---- Styles & theme ----
 
 type Theme struct {
@@ -198,9 +200,19 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 	if startH > maxH {
 		startH = maxH
 	}
-	if int64(width)*int64(startH) > MaxTotalPixels {
-		startH = int(MaxTotalPixels / int64(width))
+
+	// Sane initial allocation budget to prevent massive front-loaded allocations (~16MB / 4M pixels)
+	if int64(width)*int64(startH) > 4*1024*1024 {
+		startH = int((4 * 1024 * 1024) / int64(width))
 	}
+	if startH < 64 {
+		startH = 64
+	}
+
+	if int64(width)*int64(startH) > maxTotalPixels {
+		startH = int(maxTotalPixels / int64(width))
+	}
+
 	// Start tall; we'll grow later if needed
 	img := image.NewRGBA(image.Rect(0, 0, width, startH))
 	dc := freetype.NewContext()
@@ -245,8 +257,8 @@ func (c *canvas) ensureHeightAbs(targetY int) {
 		newH = c.maxH
 	}
 
-	if int64(c.w)*int64(newH) > MaxTotalPixels {
-		newH = int(MaxTotalPixels / int64(c.w))
+	if int64(c.w)*int64(newH) > maxTotalPixels {
+		newH = int(maxTotalPixels / int64(c.w))
 	}
 	if targetY > newH {
 		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d, pixel budget)", targetY, newH))
