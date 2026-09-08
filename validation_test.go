@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-
 func TestValidationAndDefaults(t *testing.T) {
 	img, err := Render([]byte("test"), RenderOptions{})
 	if err != nil {
@@ -55,16 +54,24 @@ func TestValidationAndDefaults(t *testing.T) {
 
 func TestRegressionIssues(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 0})
-	if err != nil { t.Fatalf("unexpected error for font size 0: %v", err) }
-	if fonts.Regular == nil { t.Fatalf("expected fonts to be loaded for size 0 (fallback to 16)") }
+	if err != nil {
+		t.Fatalf("unexpected error for font size 0: %v", err)
+	}
+	if fonts.Regular == nil {
+		t.Fatalf("expected fonts to be loaded for size 0 (fallback to 16)")
+	}
 
 	if _, err = Render([]byte("test"), RenderOptions{Width: 100, Margin: 1 << 30}); err != ErrNoDrawableWidth {
 		t.Errorf("expected ErrNoDrawableWidth for max-int margin, got %v", err)
 	}
 
 	img, err := Render([]byte("test"), RenderOptions{Width: 4096})
-	if err != nil { t.Errorf("unexpected error for 4096 width: %v", err) }
-	if img != nil && img.Bounds().Dx() != 4096 { t.Errorf("expected 4096 width, got %d", img.Bounds().Dx()) }
+	if err != nil {
+		t.Errorf("unexpected error for 4096 width: %v", err)
+	}
+	if img != nil && img.Bounds().Dx() != 4096 {
+		t.Errorf("expected 4096 width, got %d", img.Bounds().Dx())
+	}
 
 	origPixelBudget := maxTotalPixels
 	maxTotalPixels = 100 * 100
@@ -72,8 +79,11 @@ func TestRegressionIssues(t *testing.T) {
 
 	largeMD := "test\n\ntest\n\ntest\n\ntest\n\ntest\n\ntest"
 	_, err = Render([]byte(largeMD), RenderOptions{Width: 100, MaxHeight: 32768})
-	if err == nil { t.Errorf("expected error for genuine huge allocation, got nil")
-	} else if !strings.Contains(err.Error(), "pixel budget") { t.Errorf("expected pixel budget error, got %v", err) }
+	if err == nil {
+		t.Errorf("expected error for genuine huge allocation, got nil")
+	} else if !strings.Contains(err.Error(), "pixel budget") {
+		t.Errorf("expected pixel budget error, got %v", err)
+	}
 
 	if _, err = Render([]byte("test"), RenderOptions{BaseFontSize: math.NaN()}); err != ErrInvalidFontSize {
 		t.Errorf("expected ErrInvalidFontSize for NaN, got %v", err)

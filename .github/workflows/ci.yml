@@ -386,6 +386,11 @@ jobs:
             exit 1
           fi
 
+      - name: Verify generated code is up-to-date
+        run: |
+          go generate ./...
+          if ! git diff --quiet; then echo "Generated code is out of date"; git diff; false; fi
+
         run: go test ./... -v
 
   go-vet:
