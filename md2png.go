@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,6 +38,24 @@ import (
 //  - Export PNG, JPG, or GIF based on output extension
 //
 // Not a full HTML renderer; keep expectations practical.
+
+var (
+	ErrInvalidWidth     = errors.New("md2png: invalid width")
+	ErrInvalidMargin    = errors.New("md2png: invalid margin")
+	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
+	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
+	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
+	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
+)
+
+const (
+	MaxAllowedWidth    = 32768
+	MaxAllowedHeight   = 131072
+	MaxTotalPixels     = 67108864 // 64 million pixels, e.g., 2048x32768
+	MaxAllowedFontSize = 1024
+)
+
+var maxTotalPixels = int64(MaxTotalPixels) // Overridable for testing
 
 // ---- Styles & theme ----
 
@@ -104,6 +123,9 @@ func loadFontAndFace(ttfBytes []byte, size float64) (*FontAndFace, error) {
 }
 
 func loadFonts(cfg FontConfig) (Fonts, error) {
+	if cfg.SizeBase <= 0 || math.IsNaN(cfg.SizeBase) {
+		cfg.SizeBase = 16
+	}
 	var f Fonts
 	var err error
 
@@ -178,6 +200,22 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 	if startH > maxH {
 		startH = maxH
 	}
+
+	// Sane initial allocation budget to prevent massive front-loaded allocations (~16MB / 4M pixels)
+	if int64(width)*int64(startH) > 4*1024*1024 {
+		startH = int((4 * 1024 * 1024) / int64(width))
+	}
+	if startH < 64 {
+		startH = 64
+	}
+	if maxH > 0 && startH > maxH {
+		startH = maxH
+	}
+
+	if int64(width)*int64(startH) > maxTotalPixels {
+		startH = int(maxTotalPixels / int64(width))
+	}
+
 	// Start tall; we'll grow later if needed
 	img := image.NewRGBA(image.Rect(0, 0, width, startH))
 	dc := freetype.NewContext()
@@ -220,6 +258,13 @@ func (c *canvas) ensureHeightAbs(targetY int) {
 	}
 	if c.maxH > 0 && newH > c.maxH {
 		newH = c.maxH
+	}
+
+	if int64(c.w)*int64(newH) > maxTotalPixels {
+		newH = int(maxTotalPixels / int64(c.w))
+	}
+	if targetY > newH {
+		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d, pixel budget)", targetY, newH))
 	}
 
 	newImg := image.NewRGBA(image.Rect(0, 0, c.w, newH))
@@ -1312,22 +1357,27 @@ func LoadFonts(cfg FontConfig) (Fonts, error) {
 	return loadFonts(cfg)
 }
 
-// RenderOptions configure how Markdown is rendered to an image.
+// RenderOptions configures the Markdown to image rendering process.
+// Zero values (or empty structs) will automatically populate with sensible defaults,
+// including a 1024px width, 48px margin, 16pt font, and a 32768px height limit.
 type RenderOptions struct {
-	Width          int
-	Margin         int
-	BaseFontSize   float64
-	Theme          Theme
-	Fonts          Fonts
-	LinkFootnotes  *bool
-	ImageFootnotes *bool
-	BaseDir        string
-	MaxHeight      int // Maximum permitted output height to prevent out-of-memory on large documents
+	Width          int     // Overall image width in pixels. Default is 1024, max is 32768.
+	Margin         int     // Border margin in pixels. Default is 48.
+	ZeroMargin     bool    // If true, intentionally use a 0 margin instead of the default.
+	BaseFontSize   float64 // Base font size in points. Default is 16, max is 1024.
+	Theme          Theme   // Color theme. Defaults to light theme.
+	Fonts          Fonts   // Font configuration. Defaults to bundled Go fonts.
+	LinkFootnotes  *bool   // Add footnotes for links. Defaults to true.
+	ImageFootnotes *bool   // Add footnotes for images. Defaults to false.
+	BaseDir        string  // Base directory for resolving local image paths.
+	MaxHeight      int     // Maximum permitted output height (default 32768) to prevent OOM.
 }
 
 // Render converts the provided Markdown document into a raster image using the
 // supplied options. Zero values enable sensible defaults (1024px width,
-// 48px margin, 16pt base font, light theme, bundled fonts).
+// 48px margin, 16pt base font, light theme, 32768px max height, bundled fonts).
+// Dimensions that are negative, excessively large (width > 32768, font > 1024),
+// or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
 func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1339,23 +1389,48 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 		}
 	}()
 
-	if opts.Width <= 0 {
+	if opts.Width < 0 {
+		return nil, ErrInvalidWidth
+	}
+	if opts.Width == 0 {
 		opts.Width = 1024
 	}
-	if opts.Margin <= 0 {
+	if opts.Width > MaxAllowedWidth {
+		return nil, ErrResourceLimit
+	}
+
+	if opts.Margin < 0 {
+		return nil, ErrInvalidMargin
+	}
+	if opts.Margin == 0 && !opts.ZeroMargin {
 		opts.Margin = 48
 	}
-	if opts.BaseFontSize <= 0 {
+
+	if opts.Margin >= (opts.Width+1)/2 {
+		return nil, ErrNoDrawableWidth
+	}
+
+	if opts.BaseFontSize < 0 || math.IsNaN(opts.BaseFontSize) {
+		return nil, ErrInvalidFontSize
+	}
+	if opts.BaseFontSize == 0 {
 		opts.BaseFontSize = 16
 	}
+	if opts.BaseFontSize > MaxAllowedFontSize {
+		return nil, ErrResourceLimit
+	}
+
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
 	}
 	if opts.MaxHeight < 0 {
-		return nil, errors.New("md2png: MaxHeight cannot be negative")
+		return nil, ErrInvalidMaxHeight
 	}
 	if opts.MaxHeight == 0 {
 		opts.MaxHeight = 32768
+	}
+	if opts.MaxHeight > MaxAllowedHeight {
+		return nil, ErrResourceLimit
 	}
 
 	// Fill in missing fonts using the bundled defaults.

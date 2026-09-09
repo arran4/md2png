@@ -30,16 +30,16 @@ jobs:
           go-version-file: go.mod
 
       - name: Render README to PNG
-        run: go run ./cmd/md2png -in README.md -out readme.png
+        run: go run ./cmd/md2png --in README.md --out readme.png
 
       - name: Render light theme example
         run: |
           mkdir -p examples
-          go run ./cmd/md2png -in testdata/all_features.md -out examples/light-example.png -theme light
+          go run ./cmd/md2png --in testdata/all_features.md --out examples/light-example.png --theme light
 
       - name: Render dark theme example
         run: |
-          go run ./cmd/md2png -in testdata/all_features.md -out examples/dark-example.png -theme dark
+          go run ./cmd/md2png --in testdata/all_features.md --out examples/dark-example.png --theme dark
 
       - name: Upload documentation artifacts
         uses: actions/upload-artifact@v4

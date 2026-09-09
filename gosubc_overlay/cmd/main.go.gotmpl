@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/arran4/md2png/cmd"
+	"{{.PackagePath}}/cmd"
 )
 
 var (
@@ -17,13 +17,13 @@ var (
 
 // Provenance
 var (
-	GeneratorVersion = "v0.0.30-0.20260909021348-caa7cff8ac3c"
-	GeneratedAt      = ""
-	ProjectCommit    = ""
+	GeneratorVersion = "{{if .Provenance}}{{ .Provenance.Version }}{{end}}"
+	GeneratedAt      = "{{if .Provenance}}{{ .Provenance.Timestamp }}{{end}}"
+	ProjectCommit    = "{{if .Provenance}}{{ .Provenance.ProjectCommit }}{{end}}"
 )
 
 func main() {
-	root, err := NewRoot("md2view", version, commit, date)
+	root, err := NewRoot("{{.MainCmdName}}", version, commit, date)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

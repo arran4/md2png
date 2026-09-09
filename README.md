@@ -10,7 +10,7 @@
 - Handles headings (H1–H5), paragraphs, ordered and unordered lists, bold text, code blocks, block quotes, tables, and horizontal rules.
 - Dark and light themes, adjustable width, margin, and point size.
 - Optional custom fonts: `--font`, `--fontbold`, `--fontmono`.
-- Output format follows the `-out` extension.
+- Output format follows the `--out` extension.
 
 ---
 
@@ -40,58 +40,58 @@ Requires Go 1.22 or newer.
 ## CLI usage
 
 ```bash
-./md2png -in README.md -out out.png
+./md2png --in README.md --out out.png
 ```
 
 ### Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-in` | Markdown input file, or stdin when empty | — |
-| `-out` | Output image (`.png`, `.jpg`, `.gif`) | `out.png` |
-| `-width` | Image width in pixels | 1024 |
-| `-margin` | Margin in pixels | 48 |
-| `-pt` | Base font size (points) | 16 |
-| `-theme` | `light` or `dark` | `light` |
-| `-font` | Regular font TTF path | built-in Go Regular |
-| `-fontbold` | Bold font TTF path | built-in Go Bold |
-| `-fontmono` | Monospace font TTF path | built-in Go Mono |
-| `-footnote-links` | Emit link targets as numbered footnotes | `true` |
-| `-footnote-images` | Emit image targets as numbered footnotes | `false` |
-| `-max-height` | Maximum output height in pixels (0 for default) | 32768 |
+| `--in` | Markdown input file, or stdin when empty | — |
+| `--out` | Output image (`.png`, `.jpg`, `.gif`) | `out.png` |
+| `--width` | Image width in pixels | 1024 |
+| `--margin` | Margin in pixels | 48 |
+| `--pt` | Base font size (points) | 16 |
+| `--theme` | `light` or `dark` | `light` |
+| `--font` | Regular font TTF path | built-in Go Regular |
+| `--fontbold` | Bold font TTF path | built-in Go Bold |
+| `--fontmono` | Monospace font TTF path | built-in Go Mono |
+| `--footnote-links` | Emit link targets as numbered footnotes | `true` |
+| `--footnote-images` | Emit image targets as numbered footnotes | `false` |
+| `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
 
 ### Examples
 
 Render Markdown from disk:
 
 ```bash
-./md2png -in example.md -out example.png
+./md2png --in example.md --out example.png
 ```
 
 Dark theme, wider frame, larger type:
 
 ```bash
-./md2png -in blogpost.md -out post.png -theme dark -width 1400 -pt 18
+./md2png --in blogpost.md --out post.png --theme dark --width 1400 --pt 18
 ```
 
 Produce an animated GIF (palette handled for you):
 
 ```bash
-./md2png -in slides.md -out slides.gif
+./md2png --in slides.md --out slides.gif
 ```
 
 Use your own fonts:
 
 ```bash
-./md2png -in notes.md -out notes.jpg \
-  -font /usr/share/fonts/TTF/DejaVuSans.ttf \
-  -fontmono /usr/share/fonts/TTF/DejaVuSansMono.ttf
+./md2png --in notes.md --out notes.jpg \
+  --font /usr/share/fonts/TTF/DejaVuSans.ttf \
+  --fontmono /usr/share/fonts/TTF/DejaVuSansMono.ttf
 ```
 
 From stdin:
 
 ```bash
-echo "# Hello\nThis came from stdin!" | ./md2png -out hello.png
+echo "# Hello\nThis came from stdin!" | ./md2png --out hello.png
 ```
 
 ---
@@ -163,7 +163,7 @@ Dark theme:
 1. Parse Markdown with [`yuin/goldmark`](https://github.com/yuin/goldmark).
 2. Walk the AST and draw elements onto an RGBA image with [`freetype`](https://pkg.go.dev/github.com/golang/freetype).
 3. Wrap text, handle indentation, block quotes, code blocks, and tables.
-4. Encode the result as PNG, JPEG, or GIF based on the `-out` extension.
+4. Encode the result as PNG, JPEG, or GIF based on the `--out` extension.
 
 Everything happens in memory; there is no HTML renderer or external process.
 

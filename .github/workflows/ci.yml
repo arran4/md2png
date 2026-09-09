@@ -376,6 +376,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify generated code is up-to-date
+        run: |
+          go generate ./...
+          if ! git diff --quiet; then echo 'Generated code is out of date'; git diff; false; fi
       - name: Test
         run: go test ./... -v
 
