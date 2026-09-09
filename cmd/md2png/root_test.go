@@ -20,17 +20,27 @@ func TestRoot_Execute(t *testing.T) {
 
 	args := []string{}
 	args = append(args, "--in")
+	args = append(args, "test")
 	args = append(args, "--out")
+	args = append(args, "test")
 	args = append(args, "--width")
+	args = append(args, "1")
 	args = append(args, "--margin")
+	args = append(args, "1")
 	args = append(args, "--pt")
+	args = append(args, "1.5")
 	args = append(args, "--theme")
-	args = append(args, "--fontRegular")
-	args = append(args, "--fontBold")
-	args = append(args, "--fontMono")
-	args = append(args, "--footnoteLinks")
-	args = append(args, "--footnoteImages")
-	args = append(args, "--maxHeight")
+	args = append(args, "test")
+	args = append(args, "--font")
+	args = append(args, "test")
+	args = append(args, "--fontbold")
+	args = append(args, "test")
+	args = append(args, "--fontmono")
+	args = append(args, "test")
+	args = append(args, "--footnote-links")
+	args = append(args, "--footnote-images")
+	args = append(args, "--max-height")
+	args = append(args, "1")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -38,6 +48,67 @@ func TestRoot_Execute(t *testing.T) {
 	}
 	if !called {
 		t.Error("CommandAction was not called")
+	}
+
+	if cmd.in == nil {
+		t.Errorf("Expected in to be non-nil")
+	} else if *cmd.in != "test" {
+		t.Errorf("Expected in to be 'test', got '%v'", *cmd.in)
+	}
+	if cmd.out == nil {
+		t.Errorf("Expected out to be non-nil")
+	} else if *cmd.out != "test" {
+		t.Errorf("Expected out to be 'test', got '%v'", *cmd.out)
+	}
+	if cmd.width == nil {
+		t.Errorf("Expected width to be non-nil")
+	} else if *cmd.width != 1 {
+		t.Errorf("Expected width to be 1, got '%v'", *cmd.width)
+	}
+	if cmd.margin == nil {
+		t.Errorf("Expected margin to be non-nil")
+	} else if *cmd.margin != 1 {
+		t.Errorf("Expected margin to be 1, got '%v'", *cmd.margin)
+	}
+	if cmd.pt == nil {
+		t.Errorf("Expected pt to be non-nil")
+	} else if *cmd.pt != 1.5 {
+		t.Errorf("Expected pt to be 1.5, got '%v'", *cmd.pt)
+	}
+	if cmd.theme == nil {
+		t.Errorf("Expected theme to be non-nil")
+	} else if *cmd.theme != "test" {
+		t.Errorf("Expected theme to be 'test', got '%v'", *cmd.theme)
+	}
+	if cmd.fontRegular == nil {
+		t.Errorf("Expected fontRegular to be non-nil")
+	} else if *cmd.fontRegular != "test" {
+		t.Errorf("Expected fontRegular to be 'test', got '%v'", *cmd.fontRegular)
+	}
+	if cmd.fontBold == nil {
+		t.Errorf("Expected fontBold to be non-nil")
+	} else if *cmd.fontBold != "test" {
+		t.Errorf("Expected fontBold to be 'test', got '%v'", *cmd.fontBold)
+	}
+	if cmd.fontMono == nil {
+		t.Errorf("Expected fontMono to be non-nil")
+	} else if *cmd.fontMono != "test" {
+		t.Errorf("Expected fontMono to be 'test', got '%v'", *cmd.fontMono)
+	}
+	if cmd.footnoteLinks == nil {
+		t.Errorf("Expected footnoteLinks to be non-nil")
+	} else if *cmd.footnoteLinks != true {
+		t.Errorf("Expected footnoteLinks to be true, got '%v'", *cmd.footnoteLinks)
+	}
+	if cmd.footnoteImages == nil {
+		t.Errorf("Expected footnoteImages to be non-nil")
+	} else if *cmd.footnoteImages != true {
+		t.Errorf("Expected footnoteImages to be true, got '%v'", *cmd.footnoteImages)
+	}
+	if cmd.maxHeight == nil {
+		t.Errorf("Expected maxHeight to be non-nil")
+	} else if *cmd.maxHeight != 1 {
+		t.Errorf("Expected maxHeight to be 1, got '%v'", *cmd.maxHeight)
 	}
 
 }
