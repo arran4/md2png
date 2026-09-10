@@ -47,10 +47,12 @@ func ConvertCommandArgsToRenderOptions(
 		return md2png.RenderOptions{}, err
 	}
 
+	policy := md2png.DefaultCLIImagePolicy()
 	opts := md2png.RenderOptions{
-		Theme:   th,
-		Fonts:   fonts,
-		BaseDir: baseDir,
+		Theme:       th,
+		Fonts:       fonts,
+		BaseDir:     baseDir,
+		ImagePolicy: &policy,
 	}
 
 	if width != nil {

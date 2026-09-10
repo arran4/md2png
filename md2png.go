@@ -2,6 +2,7 @@ package md2png
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -46,6 +47,8 @@ var (
 	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
 	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
 	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
+	ErrPolicyDenied     = errors.New("md2png: image loading denied by policy")
+	ErrSandboxViolation = errors.New("md2png: path violates sandbox restrictions")
 )
 
 const (
@@ -509,6 +512,7 @@ type renderer struct {
 	imageCache     map[string]image.Image
 	imageResolvers map[string]imageResolver
 	httpClient     *http.Client
+	imagePolicy    ImagePolicy
 }
 
 type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
@@ -567,7 +571,18 @@ func (r *renderer) appendFootnoteMarker(out *[]textToken, size float64, index in
 
 func (r *renderer) ensureImageResolvers() {
 	if r.httpClient == nil {
-		r.httpClient = &http.Client{Timeout: 15 * time.Second}
+		r.httpClient = &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+					return fmt.Errorf("%w: redirect to non-http(s) scheme", ErrPolicyDenied)
+				}
+				if len(via) >= 10 {
+					return errors.New("stopped after 10 redirects")
+				}
+				return nil
+			},
+		}
 	}
 	if r.imageResolvers != nil {
 		return
@@ -731,6 +746,13 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if img, err := r.loadImage(dest); err == nil {
 				*out = append(*out, textToken{image: img, center: true})
 			} else {
+				if errors.Is(err, context.DeadlineExceeded) ||
+					errors.Is(err, context.Canceled) ||
+					errors.Is(err, ErrPolicyDenied) ||
+					errors.Is(err, ErrResourceLimit) ||
+					errors.Is(err, ErrSandboxViolation) {
+					panic(err) // let Render recover this and return correctly
+				}
 				fallback := alt
 				fallbackColor := r.c.th.FG
 				if fallback == "" {
@@ -1357,20 +1379,71 @@ func LoadFonts(cfg FontConfig) (Fonts, error) {
 	return loadFonts(cfg)
 }
 
+// ImagePolicy defines rules for fetching and decoding images when rendering Markdown.
+type ImagePolicy struct {
+	// Local images
+	AllowLocal   bool
+	SandboxLocal bool // If true, restricts to BaseDir, rejects absolute/..
+
+	// Remote images
+	AllowRemote    bool
+	MaxRemoteBytes int64 // 0 means no limit
+
+	// Request handling
+	HTTPClient *http.Client
+	Context    context.Context
+
+	// Dimension limits
+	MaxImageWidth  int
+	MaxImageHeight int
+	MaxImagePixels int
+
+	MaxCacheItems int
+}
+
+// StrictImagePolicy returns a conservative ImagePolicy suitable for rendering untrusted Markdown.
+func StrictImagePolicy() ImagePolicy {
+	return ImagePolicy{
+		AllowLocal:     false,
+		SandboxLocal:   true,
+		AllowRemote:    false,
+		MaxRemoteBytes: 5 * 1024 * 1024,
+		MaxImageWidth:  4096,
+		MaxImageHeight: 4096,
+		MaxImagePixels: 4096 * 4096,
+		MaxCacheItems:  100,
+	}
+}
+
+// DefaultCLIImagePolicy returns a policy intended for normal trusted CLI usage.
+func DefaultCLIImagePolicy() ImagePolicy {
+	return ImagePolicy{
+		AllowLocal:     true,
+		SandboxLocal:   false,
+		AllowRemote:    true,
+		MaxRemoteBytes: 50 * 1024 * 1024,
+		MaxImageWidth:  8192,
+		MaxImageHeight: 8192,
+		MaxImagePixels: 8192 * 8192,
+		MaxCacheItems:  1000,
+	}
+}
+
 // RenderOptions configures the Markdown to image rendering process.
 // Zero values (or empty structs) will automatically populate with sensible defaults,
 // including a 1024px width, 48px margin, 16pt font, and a 32768px height limit.
 type RenderOptions struct {
-	Width          int     // Overall image width in pixels. Default is 1024, max is 32768.
-	Margin         int     // Border margin in pixels. Default is 48.
-	ZeroMargin     bool    // If true, intentionally use a 0 margin instead of the default.
-	BaseFontSize   float64 // Base font size in points. Default is 16, max is 1024.
-	Theme          Theme   // Color theme. Defaults to light theme.
-	Fonts          Fonts   // Font configuration. Defaults to bundled Go fonts.
-	LinkFootnotes  *bool   // Add footnotes for links. Defaults to true.
-	ImageFootnotes *bool   // Add footnotes for images. Defaults to false.
-	BaseDir        string  // Base directory for resolving local image paths.
-	MaxHeight      int     // Maximum permitted output height (default 32768) to prevent OOM.
+	Width          int          // Overall image width in pixels. Default is 1024, max is 32768.
+	Margin         int          // Border margin in pixels. Default is 48.
+	ZeroMargin     bool         // If true, intentionally use a 0 margin instead of the default.
+	BaseFontSize   float64      // Base font size in points. Default is 16, max is 1024.
+	Theme          Theme        // Color theme. Defaults to light theme.
+	Fonts          Fonts        // Font configuration. Defaults to bundled Go fonts.
+	LinkFootnotes  *bool        // Add footnotes for links. Defaults to true.
+	ImageFootnotes *bool        // Add footnotes for images. Defaults to false.
+	BaseDir        string       // Base directory for resolving local image paths.
+	MaxHeight      int          // Maximum permitted output height (default 32768) to prevent OOM.
+	ImagePolicy    *ImagePolicy // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
 }
 
 // Render converts the provided Markdown document into a raster image using the
@@ -1380,12 +1453,19 @@ type RenderOptions struct {
 // or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
 func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
 	defer func() {
-		if r := recover(); r != nil {
-			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
-				resErr = err
-			} else {
-				panic(r)
+		if rv := recover(); rv != nil {
+			if err, ok := rv.(error); ok {
+				if strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") ||
+					errors.Is(err, context.DeadlineExceeded) ||
+					errors.Is(err, context.Canceled) ||
+					errors.Is(err, ErrPolicyDenied) ||
+					errors.Is(err, ErrResourceLimit) ||
+					errors.Is(err, ErrSandboxViolation) {
+					resErr = err
+					return
+				}
 			}
+			panic(rv)
 		}
 	}()
 
@@ -1475,12 +1555,18 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 	}
 
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
+	policy := DefaultCLIImagePolicy()
+	if opts.ImagePolicy != nil {
+		policy = *opts.ImagePolicy
+	}
+
 	r := &renderer{
 		c:              c,
 		baseSize:       opts.BaseFontSize,
 		linkFootnotes:  linkFootnotes,
 		imageFootnotes: imageFootnotes,
 		baseDir:        baseDir,
+		imagePolicy:    policy,
 	}
 	r.ensureImageResolvers()
 	if err := r.render(data); err != nil {
