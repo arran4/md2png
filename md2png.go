@@ -755,7 +755,10 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 					errors.Is(err, ErrPolicyDenied) ||
 					errors.Is(err, ErrResourceLimit) ||
 					errors.Is(err, ErrSandboxViolation) {
-					panic(err) // let Render recover this and return correctly
+					if r.renderErr == nil {
+						r.renderErr = err
+					}
+					return
 				}
 				fallback := alt
 				fallbackColor := r.c.th.FG
@@ -1279,6 +1282,9 @@ func (r *renderer) render(md []byte) error {
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(md))
 	if err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if r.renderErr != nil {
+			return ast.WalkStop, r.renderErr
+		}
 		if !entering {
 			return ast.WalkContinue, nil
 		}
@@ -1352,6 +1358,9 @@ func (r *renderer) render(md []byte) error {
 		}
 	}); err != nil {
 		return err
+	}
+	if r.renderErr != nil {
+		return r.renderErr
 	}
 	r.drawFootnotes()
 	return nil
