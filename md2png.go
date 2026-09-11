@@ -2,14 +2,20 @@ package md2png
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -510,6 +516,7 @@ type renderer struct {
 	footnotes      []string
 	baseDir        string
 	imageCache     map[string]image.Image
+	cacheKeys      []string
 	imageResolvers map[string]imageResolver
 	httpClient     *http.Client
 	imagePolicy    ImagePolicy
@@ -570,19 +577,59 @@ func (r *renderer) appendFootnoteMarker(out *[]textToken, size float64, index in
 	})
 }
 
+func (r *renderer) checkDimensions(width, height int) error {
+	if r.imagePolicy.MaxImageWidth > 0 && width > r.imagePolicy.MaxImageWidth {
+		return fmt.Errorf("%w: image width %d exceeds maximum allowed width %d", ErrResourceLimit, width, r.imagePolicy.MaxImageWidth)
+	}
+	if r.imagePolicy.MaxImageHeight > 0 && height > r.imagePolicy.MaxImageHeight {
+		return fmt.Errorf("%w: image height %d exceeds maximum allowed height %d", ErrResourceLimit, height, r.imagePolicy.MaxImageHeight)
+	}
+	if r.imagePolicy.MaxImagePixels > 0 {
+		if width > 0 && height > 0 {
+			maxPixels := int64(r.imagePolicy.MaxImagePixels)
+			w := int64(width)
+			h := int64(height)
+			if w > maxPixels/h || (w*h) > maxPixels {
+				return fmt.Errorf("%w: image pixels (%dx%d) exceeds maximum allowed pixels %d", ErrResourceLimit, width, height, r.imagePolicy.MaxImagePixels)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *renderer) ensureImageResolvers() {
 	if r.httpClient == nil {
-		r.httpClient = &http.Client{
-			Timeout: 15 * time.Second,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if r.imagePolicy.HTTPClient != nil {
+			clientCopy := *r.imagePolicy.HTTPClient
+			origCheckRedirect := clientCopy.CheckRedirect
+			clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 				if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-					return fmt.Errorf("%w: redirect to non-http(s) scheme", ErrPolicyDenied)
+					return fmt.Errorf("%w: disallowed redirect scheme %q", ErrPolicyDenied, req.URL.Scheme)
+				}
+				if origCheckRedirect != nil {
+					if err := origCheckRedirect(req, via); err != nil {
+						return fmt.Errorf("%w: redirect rejected: %w", ErrPolicyDenied, err)
+					}
 				}
 				if len(via) >= 10 {
 					return errors.New("stopped after 10 redirects")
 				}
 				return nil
-			},
+			}
+			r.httpClient = &clientCopy
+		} else {
+			r.httpClient = &http.Client{
+				Timeout: 15 * time.Second,
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+						return fmt.Errorf("%w: disallowed redirect scheme %q", ErrPolicyDenied, req.URL.Scheme)
+					}
+					if len(via) >= 10 {
+						return errors.New("stopped after 10 redirects")
+					}
+					return nil
+				},
+			}
 		}
 	}
 	if r.imageResolvers != nil {
@@ -603,13 +650,35 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 	r.ensureImageResolvers()
 	dest = strings.TrimSpace(dest)
 	scheme := ""
-	if idx := strings.Index(dest, "://"); idx != -1 {
-		scheme = strings.ToLower(dest[:idx])
+	if idx := strings.Index(dest, ":"); idx != -1 {
+		candidate := strings.ToLower(dest[:idx])
+		if len(candidate) == 1 && unicode.IsLetter(rune(candidate[0])) {
+			// Windows drive letter like C:\ or C:/
+			scheme = ""
+		} else {
+			valid := true
+			for i, ch := range candidate {
+				if i == 0 {
+					if !unicode.IsLetter(ch) {
+						valid = false
+						break
+					}
+				} else {
+					if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '+' && ch != '-' && ch != '.' {
+						valid = false
+						break
+					}
+				}
+			}
+			if valid {
+				scheme = candidate
+			}
+		}
 	}
 	resolver, ok := r.imageResolvers[scheme]
 	if !ok {
 		if scheme != "" {
-			return nil, fmt.Errorf("md2png: unsupported image scheme: %s", scheme)
+			return nil, fmt.Errorf("%w: unsupported image scheme: %s", ErrPolicyDenied, scheme)
 		}
 		return nil, fmt.Errorf("md2png: unsupported image destination: %s", dest)
 	}
@@ -632,34 +701,179 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.imageCache == nil {
-		r.imageCache = make(map[string]image.Image)
+
+	maxItems := r.imagePolicy.MaxCacheItems
+	if maxItems > 0 {
+		if r.imageCache == nil {
+			r.imageCache = make(map[string]image.Image)
+		}
+		if _, ok := r.imageCache[cacheKey]; !ok {
+			for len(r.imageCache) >= maxItems && len(r.cacheKeys) > 0 {
+				oldest := r.cacheKeys[0]
+				r.cacheKeys = r.cacheKeys[1:]
+				delete(r.imageCache, oldest)
+			}
+			r.imageCache[cacheKey] = img
+			r.cacheKeys = append(r.cacheKeys, cacheKey)
+		} else {
+			r.imageCache[cacheKey] = img
+		}
 	}
-	r.imageCache[cacheKey] = img
 	return img, nil
 }
 
 func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, error), error) {
+	if !r.imagePolicy.AllowLocal {
+		return "", nil, fmt.Errorf("%w: local image loading is disabled", ErrPolicyDenied)
+	}
+
 	path := strings.TrimSpace(dest)
-	path = strings.TrimPrefix(path, "file://")
-	if !filepath.IsAbs(path) {
-		base := strings.TrimSpace(r.baseDir)
-		if base != "" {
-			path = filepath.Join(base, path)
+	isFileURL := false
+	if strings.HasPrefix(strings.ToLower(path), "file:") {
+		isFileURL = true
+		path = path[5:]
+		if strings.HasPrefix(path, "//localhost/") {
+			path = path[11:]
+		} else if strings.HasPrefix(path, "//localhost") {
+			path = path[11:]
+		} else if strings.HasPrefix(path, "//") {
+			path = path[2:]
 		}
 	}
-	cleaned := filepath.Clean(path)
+
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		path = unescaped
+	}
+
+	baseDir := strings.TrimSpace(r.baseDir)
+	if baseDir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			baseDir = wd
+		}
+	}
+	if !filepath.IsAbs(baseDir) {
+		if abs, err := filepath.Abs(baseDir); err == nil {
+			baseDir = abs
+		}
+	}
+	baseDir = filepath.Clean(baseDir)
+
+	if r.imagePolicy.SandboxLocal {
+		// Reject absolute paths
+		if filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") ||
+			(len(path) >= 2 && unicode.IsLetter(rune(path[0])) && path[1] == ':') {
+			return "", nil, fmt.Errorf("%w: absolute paths are not permitted in sandboxed mode", ErrSandboxViolation)
+		}
+
+		// Reject file:// bypasses that specify absolute paths
+		if isFileURL && (strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") || filepath.IsAbs(path)) {
+			return "", nil, fmt.Errorf("%w: file:// absolute access is not permitted in sandboxed mode", ErrSandboxViolation)
+		}
+
+		// Lexical clean check for traversal
+		cleanedRel := filepath.Clean(path)
+		if cleanedRel == ".." || strings.HasPrefix(cleanedRel, ".."+string(filepath.Separator)) || strings.HasPrefix(cleanedRel, "../") {
+			return "", nil, fmt.Errorf("%w: path traversal outside sandbox is not permitted", ErrSandboxViolation)
+		}
+
+		targetPath := filepath.Join(baseDir, cleanedRel)
+		rel, err := filepath.Rel(baseDir, targetPath)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", nil, fmt.Errorf("%w: path escapes base directory", ErrSandboxViolation)
+		}
+
+		// Symlink canonicalization check
+		canonicalBase := baseDir
+		if evalBase, err := filepath.EvalSymlinks(baseDir); err == nil {
+			canonicalBase = filepath.Clean(evalBase)
+		}
+
+		// Check if target or any existing ancestor escapes via symlink
+		if _, err := os.Lstat(targetPath); err == nil {
+			if canonicalTarget, err := filepath.EvalSymlinks(targetPath); err == nil {
+				relTarget, err := filepath.Rel(canonicalBase, canonicalTarget)
+				if err != nil || relTarget == ".." || strings.HasPrefix(relTarget, ".."+string(filepath.Separator)) {
+					return "", nil, fmt.Errorf("%w: symlink target %q escapes base directory", ErrSandboxViolation, canonicalTarget)
+				}
+			}
+		} else {
+			// Find deepest existing ancestor to check for symlink escapes in parent dirs
+			curr := targetPath
+			for {
+				parent := filepath.Dir(curr)
+				if parent == curr || parent == "." {
+					break
+				}
+				if _, statErr := os.Lstat(parent); statErr == nil {
+					if evalParent, evalErr := filepath.EvalSymlinks(parent); evalErr == nil {
+						relParent, relErr := filepath.Rel(canonicalBase, evalParent)
+						if relErr != nil || relParent == ".." || strings.HasPrefix(relParent, ".."+string(filepath.Separator)) {
+							return "", nil, fmt.Errorf("%w: symlink parent directory escapes base directory", ErrSandboxViolation)
+						}
+					}
+					break
+				}
+				curr = parent
+			}
+		}
+
+		loader := func() (image.Image, error) {
+			f, err := os.Open(targetPath)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = f.Close() }()
+
+			cfg, _, err := image.DecodeConfig(f)
+			if err != nil {
+				return nil, err
+			}
+			if err := r.checkDimensions(cfg.Width, cfg.Height); err != nil {
+				return nil, err
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return nil, err
+			}
+			img, _, err := image.Decode(f)
+			if err != nil {
+				return nil, err
+			}
+			return img, nil
+		}
+		return targetPath, loader, nil
+	}
+
+	// Non-sandboxed (trusted) mode:
+	cleaned := path
+	if !filepath.IsAbs(cleaned) {
+		if baseDir != "" {
+			cleaned = filepath.Join(baseDir, cleaned)
+		}
+	}
+	cleaned = filepath.Clean(cleaned)
 	if !filepath.IsAbs(cleaned) {
 		if abs, err := filepath.Abs(cleaned); err == nil {
 			cleaned = abs
 		}
 	}
+
 	loader := func() (image.Image, error) {
 		f, err := os.Open(cleaned)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = f.Close() }()
+
+		cfg, _, err := image.DecodeConfig(f)
+		if err != nil {
+			return nil, err
+		}
+		if err := r.checkDimensions(cfg.Width, cfg.Height); err != nil {
+			return nil, err
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
 		img, _, err := image.Decode(f)
 		if err != nil {
 			return nil, err
@@ -670,13 +884,24 @@ func (r *renderer) resolveLocalImage(dest string) (string, func() (image.Image, 
 }
 
 func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image, error), error) {
+	if !r.imagePolicy.AllowRemote {
+		return "", nil, fmt.Errorf("%w: remote image loading is disabled", ErrPolicyDenied)
+	}
 	url := strings.TrimSpace(dest)
 	loader := func() (image.Image, error) {
 		client := r.httpClient
 		if client == nil {
 			client = http.DefaultClient
 		}
-		resp, err := client.Get(url)
+		ctx := r.imagePolicy.Context
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -684,7 +909,39 @@ func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image,
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("md2png: fetching image %s: %s", url, resp.Status)
 		}
-		img, _, err := image.Decode(resp.Body)
+
+		if r.imagePolicy.MaxRemoteBytes > 0 && resp.ContentLength > r.imagePolicy.MaxRemoteBytes {
+			return nil, fmt.Errorf("%w: remote image content length %d exceeds limit of %d bytes", ErrResourceLimit, resp.ContentLength, r.imagePolicy.MaxRemoteBytes)
+		}
+
+		var bodyReader io.Reader = resp.Body
+		if r.imagePolicy.MaxRemoteBytes > 0 {
+			bodyReader = io.LimitReader(resp.Body, r.imagePolicy.MaxRemoteBytes+1)
+		}
+
+		data, err := io.ReadAll(bodyReader)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, err
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		if r.imagePolicy.MaxRemoteBytes > 0 && int64(len(data)) > r.imagePolicy.MaxRemoteBytes {
+			return nil, fmt.Errorf("%w: remote image size exceeds limit of %d bytes", ErrResourceLimit, r.imagePolicy.MaxRemoteBytes)
+		}
+
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		if err := r.checkDimensions(cfg.Width, cfg.Height); err != nil {
+			return nil, err
+		}
+		img, _, err := image.Decode(bytes.NewReader(data))
 		if err != nil {
 			return nil, err
 		}
@@ -1043,8 +1300,14 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 	}
 
 	inlineBlock := func(node ast.Node) {
+		if r.renderErr != nil {
+			return
+		}
 		var tokens []textToken
 		r.collectInlineTokens(node, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+		if r.renderErr != nil {
+			return
+		}
 		if len(tokens) == 0 {
 			text := strings.TrimRight(getNodeText(node, md), "\n")
 			if text == "" {
@@ -1064,6 +1327,9 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 	}
 
 	for child := li.FirstChild(); child != nil; child = child.NextSibling() {
+		if r.renderErr != nil {
+			return
+		}
 		switch c := child.(type) {
 		case *ast.Paragraph:
 			inlineBlock(c)
@@ -1094,6 +1360,9 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			quoteStart := r.c.cursorY
 			var tokens []textToken
 			r.collectInlineTokens(c, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			if r.renderErr != nil {
+				return
+			}
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
 				_ = r.c.drawTokens(tokens, contentLeft+10, r.c.w-r.c.margin)
@@ -1114,8 +1383,14 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 }
 
 func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHeader bool) [][]textToken {
+	if r.renderErr != nil {
+		return nil
+	}
 	var cells [][]textToken
 	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if r.renderErr != nil {
+			return nil
+		}
 		if tc, ok := cell.(*extensionAST.TableCell); ok {
 			var tokens []textToken
 			font := r.c.fonts.Regular
@@ -1123,6 +1398,9 @@ func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHead
 				font = r.c.fonts.Bold
 			}
 			r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
+			if r.renderErr != nil {
+				return nil
+			}
 			cells = append(cells, tokens)
 		}
 	}
@@ -1130,25 +1408,21 @@ func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHead
 }
 
 func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
+	if r.renderErr != nil {
+		return
+	}
 	var rows [][][]textToken
 	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
+		if r.renderErr != nil {
+			return
+		}
 		switch n := node.(type) {
 		case *extensionAST.TableHeader:
-			// The children of TableHeader are TableCell, not TableRow!
-			// We need to collect the cells directly.
-			// Actually, wait, goldmark v1.7.4 might be different from whatever was assumed.
-			// Let's create a pseudo-row just to pass to a logic, or adjust.
-			// The original code was:
-			/*
-				for child := n.FirstChild(); child != nil; child = child.NextSibling() {
-					if tr, ok := child.(*extensionAST.TableRow); ok {
-						rows = append(rows, r.collectTableRow(tr, md, true))
-					}
-				}
-			*/
-			// Since we know TableHeader directly contains TableCells, let's collect them!
 			var cells [][]textToken
 			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if r.renderErr != nil {
+					return
+				}
 				if tc, ok := cell.(*extensionAST.TableCell); ok {
 					var tokens []textToken
 					font := r.c.fonts.Regular
@@ -1156,6 +1430,9 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 						font = r.c.fonts.Bold
 					}
 					r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
+					if r.renderErr != nil {
+						return
+					}
 					cells = append(cells, tokens)
 				}
 			}
@@ -1306,6 +1583,9 @@ func (r *renderer) render(md []byte) error {
 			}
 			var tokens []textToken
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, size, r.c.th.FG, &tokens)
+			if r.renderErr != nil {
+				return ast.WalkStop, r.renderErr
+			}
 			r.c.addVSpace(int(r.baseSize * 0.75))
 			_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
 			r.c.addVSpace(int(r.baseSize * 0.5))
@@ -1313,6 +1593,9 @@ func (r *renderer) render(md []byte) error {
 		case *ast.Paragraph:
 			var tokens []textToken
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize, r.c.th.FG, &tokens)
+			if r.renderErr != nil {
+				return ast.WalkStop, r.renderErr
+			}
 			if len(tokens) > 0 {
 				_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
 				r.c.addVSpace(int(r.baseSize * 0.9))
@@ -1320,9 +1603,15 @@ func (r *renderer) render(md []byte) error {
 			return ast.WalkSkipChildren, nil
 		case *ast.List:
 			r.renderList(nd, md, 0)
+			if r.renderErr != nil {
+				return ast.WalkStop, r.renderErr
+			}
 			return ast.WalkSkipChildren, nil
 		case *extensionAST.Table:
 			r.renderTable(nd, md)
+			if r.renderErr != nil {
+				return ast.WalkStop, r.renderErr
+			}
 			return ast.WalkSkipChildren, nil
 		case *ast.CodeBlock, *ast.FencedCodeBlock:
 			text := strings.TrimRight(getNodeText(n, md), "\n")
@@ -1333,6 +1622,9 @@ func (r *renderer) render(md []byte) error {
 			startY := r.c.cursorY
 			var tokens []textToken
 			r.collectInlineTokens(n, md, r.c.fonts.Regular, r.baseSize*1.0, r.c.th.FG, &tokens)
+			if r.renderErr != nil {
+				return ast.WalkStop, r.renderErr
+			}
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
 				_ = r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)

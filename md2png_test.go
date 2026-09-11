@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,12 @@ import (
 	"strings"
 	"testing"
 )
+
+type mockTransport func(*http.Request) (*http.Response, error)
+
+func (m mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m(req)
+}
 
 func TestWrapLinesPreservesIndentation(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
@@ -103,11 +110,24 @@ func TestRendererFootnoteCollection(t *testing.T) {
 		t.Fatalf("load fonts: %v", err)
 	}
 	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
+	mockClient := &http.Client{
+		Transport: mockTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Status:     "404 Not Found",
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	policy := DefaultCLIImagePolicy()
+	policy.HTTPClient = mockClient
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
 		linkFootnotes:  true,
 		imageFootnotes: true,
+		imagePolicy:    policy,
 	}
 	r.ensureImageResolvers()
 	markdown := []byte("First [link](https://example.com) and second [same](https://example.com) ![img](https://example.com/image.png)")
@@ -128,11 +148,24 @@ func TestRendererFootnoteToggles(t *testing.T) {
 		t.Fatalf("load fonts: %v", err)
 	}
 	c := newCanvas(640, 48, lightTheme, fonts, 16, 32768)
+	mockClient := &http.Client{
+		Transport: mockTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Status:     "404 Not Found",
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	policy := DefaultCLIImagePolicy()
+	policy.HTTPClient = mockClient
 	r := &renderer{
 		c:              c,
 		baseSize:       16,
 		linkFootnotes:  false,
 		imageFootnotes: true,
+		imagePolicy:    policy,
 	}
 	r.ensureImageResolvers()
 	markdown := []byte("[link](https://example.com) ![img](https://example.com/image.png)")

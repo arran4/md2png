@@ -144,6 +144,45 @@ func main() {
 
 `RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, limits (`MaxHeight`), swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
 
+### Security and Image Loading Policy
+
+Rendering Markdown documents containing image tags (`![alt](url)`) can initiate filesystem access (for local paths or `file://` URLs) and network requests (for `http://` or `https://` URLs).
+
+#### Trusted CLI vs. Untrusted Input
+
+- **Default / CLI behavior (`DefaultCLIImagePolicy()`)**:
+  When using the CLI tools (`md2png`, `md2view`) or leaving `RenderOptions.ImagePolicy` as `nil`, `md2png` uses `DefaultCLIImagePolicy()`. This mode assumes trusted input and permits loading local images from the filesystem and remote images over HTTP/HTTPS, bounded by sensible safety limits (50 MB response limit, 8192×8192 px max dimensions, 1000 cache items). Missing images in trusted mode non-fatally fall back to alt text.
+
+- **Untrusted Markdown (`StrictImagePolicy()`)**:
+  When rendering Markdown from untrusted sources, configure a strict policy to prevent unauthorized filesystem disclosure and SSRF attacks:
+
+  ```go
+  policy := md2png.StrictImagePolicy()
+  opts := md2png.RenderOptions{
+      ImagePolicy: &policy,
+  }
+  img, err := md2png.Render(untrustedData, opts)
+  ```
+
+  `StrictImagePolicy()` disables local file access (`AllowLocal: false`), sandboxes local paths to `RenderOptions.BaseDir` (`SandboxLocal: true`), disables network requests (`AllowRemote: false`), limits images to 4096×4096 px and 5 MB, and bounds cache capacity to 100 items. Any policy denial, sandbox violation, or resource limit halts rendering immediately and returns typed sentinel errors (`ErrPolicyDenied`, `ErrSandboxViolation`, `ErrResourceLimit`).
+
+#### Policy Controls
+
+You can customize `md2png.ImagePolicy` with fine-grained controls:
+
+| Control | Description |
+|---|---|
+| `AllowLocal` | Enables/disables reading local image files (`file://` or relative paths). |
+| `SandboxLocal` | When `true`, restricts local access strictly to `RenderOptions.BaseDir`, rejecting `..` traversal escapes, absolute filesystem paths, symlink escapes, and `file://` bypasses. |
+| `AllowRemote` | Enables/disables fetching remote images over HTTP and HTTPS. |
+| `MaxRemoteBytes` | Maximum permitted response size in bytes for remote images (0 for unlimited). Oversized responses fail deterministically before loading into memory. |
+| `MaxImageWidth` | Maximum image width in pixels. Evaluated via `image.DecodeConfig` before full decompression. |
+| `MaxImageHeight` | Maximum image height in pixels. Evaluated before full decompression. |
+| `MaxImagePixels` | Maximum total pixels (width × height) to protect against decompression bombs. |
+| `MaxCacheItems` | Maximum number of decoded images retained in the renderer cache (evicted using FIFO). |
+| `Context` | A `context.Context` for request cancellation and timeouts (`errors.Is(err, context.Canceled)` or `errors.Is(err, context.DeadlineExceeded)`). |
+| `HTTPClient` | A caller-supplied `*http.Client` to control custom transports, proxy resolvers, or redirect policies without mutation. Redirects to non-HTTP(S) schemes are rejected. |
+
 ---
 
 ## Output
