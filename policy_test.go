@@ -607,11 +607,91 @@ func TestPolicy_CallerSuppliedCheckRedirectPreserved(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from caller-supplied CheckRedirect, got nil")
 	}
+	if !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("expected errors.Is(err, ErrPolicyDenied), got: %v", err)
+	}
 	if !errors.Is(err, errCustomRedirect) {
 		t.Fatalf("expected error to wrap errCustomRedirect, got: %v", err)
 	}
 	if atomic.LoadInt32(&redirectChecked) == 0 {
 		t.Fatalf("expected caller CheckRedirect to be invoked")
+	}
+}
+
+func TestPolicy_CallerSuppliedCheckRedirectErrUseLastResponse(t *testing.T) {
+	var redirectChecked int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, "/target", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(createTestPNG(t, 20, 20))
+	}))
+	defer server.Close()
+
+	customClient := server.Client()
+	customClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		atomic.AddInt32(&redirectChecked, 1)
+		return http.ErrUseLastResponse
+	}
+
+	opts := RenderOptions{
+		ImagePolicy: &ImagePolicy{
+			AllowRemote: true,
+			HTTPClient:  customClient,
+		},
+	}
+
+	img, err := Render([]byte(fmt.Sprintf("![alt text](%s/start)", server.URL)), opts)
+	if errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("expected http.ErrUseLastResponse to not be transformed into ErrPolicyDenied, got: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("expected non-fatal fallback when redirect stops via ErrUseLastResponse, got error: %v", err)
+	}
+	if img == nil {
+		t.Fatalf("expected non-nil image with fallback alt text")
+	}
+	if atomic.LoadInt32(&redirectChecked) == 0 {
+		t.Fatalf("expected caller CheckRedirect to be invoked")
+	}
+}
+
+func TestPolicy_RedirectCountExceededFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/loop", http.StatusFound)
+	}))
+	defer server.Close()
+
+	// Default client
+	optsDefault := RenderOptions{
+		ImagePolicy: &ImagePolicy{
+			AllowRemote: true,
+		},
+	}
+	_, err := Render([]byte(fmt.Sprintf("![img](%s/loop)", server.URL)), optsDefault)
+	if err == nil {
+		t.Fatalf("expected error for redirect loop with default client, got nil")
+	}
+	if !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("expected errors.Is(err, ErrPolicyDenied) on redirect count limit with default client, got: %v", err)
+	}
+
+	// Caller-supplied client
+	optsCustom := RenderOptions{
+		ImagePolicy: &ImagePolicy{
+			AllowRemote: true,
+			HTTPClient:  server.Client(),
+		},
+	}
+	_, err = Render([]byte(fmt.Sprintf("![img](%s/loop)", server.URL)), optsCustom)
+	if err == nil {
+		t.Fatalf("expected error for redirect loop with custom client, got nil")
+	}
+	if !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("expected errors.Is(err, ErrPolicyDenied) on redirect count limit with custom client, got: %v", err)
 	}
 }
 

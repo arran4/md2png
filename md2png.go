@@ -608,11 +608,14 @@ func (r *renderer) ensureImageResolvers() {
 				}
 				if origCheckRedirect != nil {
 					if err := origCheckRedirect(req, via); err != nil {
+						if errors.Is(err, http.ErrUseLastResponse) {
+							return http.ErrUseLastResponse
+						}
 						return fmt.Errorf("%w: redirect rejected: %w", ErrPolicyDenied, err)
 					}
 				}
 				if len(via) >= 10 {
-					return errors.New("stopped after 10 redirects")
+					return fmt.Errorf("%w: stopped after 10 redirects", ErrPolicyDenied)
 				}
 				return nil
 			}
@@ -625,7 +628,7 @@ func (r *renderer) ensureImageResolvers() {
 						return fmt.Errorf("%w: disallowed redirect scheme %q", ErrPolicyDenied, req.URL.Scheme)
 					}
 					if len(via) >= 10 {
-						return errors.New("stopped after 10 redirects")
+						return fmt.Errorf("%w: stopped after 10 redirects", ErrPolicyDenied)
 					}
 					return nil
 				},
