@@ -1466,19 +1466,12 @@ type RenderOptions struct {
 // or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
 func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
 	defer func() {
-		if rv := recover(); rv != nil {
-			if err, ok := rv.(error); ok {
-				if strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") ||
-					errors.Is(err, context.DeadlineExceeded) ||
-					errors.Is(err, context.Canceled) ||
-					errors.Is(err, ErrPolicyDenied) ||
-					errors.Is(err, ErrResourceLimit) ||
-					errors.Is(err, ErrSandboxViolation) {
-					resErr = err
-					return
-				}
+		if r := recover(); r != nil {
+			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
+				resErr = err
+			} else {
+				panic(r)
 			}
-			panic(rv)
 		}
 	}()
 

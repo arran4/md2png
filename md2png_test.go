@@ -545,18 +545,3 @@ func TestRendererFallbackBehaviour(t *testing.T) {
 		t.Fatalf("expected an image returned")
 	}
 }
-
-func TestRendererUnrelatedPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected unrelated panic to propagate")
-		}
-	}()
-
-	// Intentionally trigger a nil pointer dereference by bypassing RenderOptions defaults
-	// (Actually, Render populates defaults, so we'll just panic directly via a bad option)
-	// Or we can just test the fallback test and rely on Go runtime panic for real bugs.
-	// Since we removed our custom panic handling, standard panics naturally propagate.
-	var p *int
-	_ = *p // provoke an immediate panic
-}
