@@ -513,6 +513,7 @@ type renderer struct {
 	imageResolvers map[string]imageResolver
 	httpClient     *http.Client
 	imagePolicy    ImagePolicy
+	renderErr      error
 }
 
 type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
@@ -693,6 +694,9 @@ func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image,
 }
 
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
+	if r.renderErr != nil {
+		return
+	}
 	if font == nil {
 		font = r.c.fonts.Regular
 	}
