@@ -42,6 +42,9 @@ builds:
         goarch: arm
     ldflags:
       - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
     flags:
       - -trimpath
   - id: md2view
@@ -56,6 +59,9 @@ builds:
       - amd64
     ldflags:
       - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
     flags:
       - -trimpath
 
