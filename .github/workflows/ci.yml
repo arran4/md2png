@@ -34,11 +34,6 @@ on:
         required: false
         default: ""
         type: string
-      publish_snapshot:
-        description: "Internal: publish as snapshot"
-        required: false
-        default: false
-        type: boolean
       allow_prs:
         description: "Allow automation to open pull requests"
         required: false
@@ -153,7 +148,7 @@ jobs:
 
   prepare-release-tag:
     name: Prepare Release Tag
-    needs: [route, release-validation]
+    needs: [route, release-ready]
     if: ${{ needs.route.outputs.run_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -471,22 +466,18 @@ jobs:
               git push origin --delete "$branch" || true
             done
 
-  release-validation:
-    name: Release Validation Gate
-    needs: [route, discover, golangci, go-test, go-vet]
-    if: |
-      !failure() && !cancelled() &&
-      needs.route.outputs.run_release == 'true' &&
-      needs.discover.result == 'success' &&
-      (needs.discover.outputs.has_go != 'true' || (needs.golangci.result == 'success' && needs.go-test.result == 'success' && needs.go-vet.result == 'success'))
+  release-ready:
+    name: Release Quality Gates Passed
+    needs: [route, discover, golangci, go-test, go-vet, build]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     steps:
-      - run: echo "All required language checks passed."
+      - run: echo "All release quality gates passed."
 
   goreleaser:
     name: GoReleaser
-    needs: [route, discover]
-    if: ${{ !failure() && !cancelled() && needs.route.outputs.run_publisher == 'true' && needs.discover.outputs.has_goreleaser == 'true' }}
+    needs: [route, discover, release-ready]
+    if: ${{ needs.route.outputs.run_publisher == 'true' && needs.discover.outputs.has_goreleaser == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -498,14 +489,23 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Determine GoReleaser Args
+        id: args
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/*-test* || "$GITHUB_REF" == refs/tags/test-* ]]; then
+             echo "args=release --snapshot --clean" >> "$GITHUB_OUTPUT"
+          else
+             echo "args=release --clean" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: >-
-            release --clean
-            ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_snapshot == true) && '--snapshot' || '' }}
+          args: ${{ steps.args.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
@@ -664,3 +664,48 @@ jobs:
             md2png
             md2view
           retention-days: 1
+
+  monthly-maintenance:
+    name: Monthly Maintenance
+    needs: [route, discover]
+    if: ${{ needs.route.outputs.run_maintenance == 'true' && inputs.allow_prs == true && needs.discover.outputs.has_go == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Update dependencies
+        run: |
+          go get -u ./...
+          go mod tidy
+      - name: Create PR if changes exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes; exiting."
+            sh -c "exit 0"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="ci/maintenance/${{ github.run_id }}"
+
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore(deps): monthly dependency updates"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore(deps): monthly dependency updates" \
+            --body "Automated monthly dependency update." \
+            --base main \
+            --head "$BRANCH" \
+            --label "dependencies"
