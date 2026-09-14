@@ -34,10 +34,10 @@ func encodeToFile(outPath string, img image.Image, format string) error {
 	tmpName := tmpFile.Name()
 
 	// Ensure cleanup if things fail. If rename succeeds, this will try to remove a non-existent file, which is safe to ignore error.
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 
 	if err := encodeImage(tmpFile, img, format); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("failed to encode image: %w", err)
 	}
 

@@ -68,7 +68,7 @@ func TestMd2png_Integration(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if _, err := png.Decode(f); err != nil {
 					t.Errorf("failed to decode as PNG: %v", err)
 				}
@@ -83,7 +83,7 @@ func TestMd2png_Integration(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if _, err := jpeg.Decode(f); err != nil {
 					t.Errorf("failed to decode as JPEG: %v", err)
 				}
@@ -98,7 +98,7 @@ func TestMd2png_Integration(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if _, err := gif.Decode(f); err != nil {
 					t.Errorf("failed to decode as GIF: %v", err)
 				}
@@ -142,7 +142,7 @@ func TestMd2png_Stdout(t *testing.T) {
 	outArg := "-"
 	err := Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -150,7 +150,7 @@ func TestMd2png_Stdout(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 
 	if buf.Len() == 0 {
 		t.Fatal("expected stdout output")
@@ -216,8 +216,8 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 	rStdin, wStdin, _ := os.Pipe()
 	os.Stdin = rStdin
 
-	wStdin.Write([]byte("# Stdin test\n"))
-	wStdin.Close()
+	_, _ = wStdin.Write([]byte("# Stdin test\n"))
+	_ = wStdin.Close()
 
 	// Setup stdout
 	oldStdout := os.Stdout
@@ -227,7 +227,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 	outArg := "-"
 	err := Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
 
-	wStdout.Close()
+	_ = wStdout.Close()
 	os.Stdout = oldStdout
 	os.Stdin = oldStdin
 
@@ -236,7 +236,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(rStdout)
+	_, _ = buf.ReadFrom(rStdout)
 
 	if buf.Len() == 0 {
 		t.Fatal("expected stdout output")
