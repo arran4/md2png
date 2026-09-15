@@ -2,11 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"image"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -23,12 +27,15 @@ func TestResolveFormat(t *testing.T) {
 	}{
 		{"stdout no format", "-", nil, "", true},
 		{"stdout with format", "-", ptr("png"), "png", false},
+		{"stdout unsupported format", "-", ptr("webp"), "", true},
 		{"file no format", "out.png", nil, "png", false},
+		{"file unsupported extension", "out.webp", nil, "", true},
 		{"file with format agree", "out.png", ptr("png"), "png", false},
 		{"file with format disagree", "out.png", ptr("jpeg"), "", true},
 		{"file with jpg mapped to jpeg", "out.jpg", nil, "jpeg", false},
 		{"file with jpg format jpeg flag", "out.jpg", ptr("jpeg"), "jpeg", false},
-		{"file with jpg flag", "out.png", ptr("jpg"), "", true}, // "jpg" is a valid format passed by flag, it is compared exactly to ext "png". So disagree. However, we map jpg ext to jpeg. Should we map jpg flag to jpeg too? Currently we don't.
+		{"file with jpg alias", "out.jpg", ptr("jpg"), "jpeg", false},
+		{"format matching is case insensitive", "out.PNG", ptr("PNG"), "png", false},
 	}
 
 	for _, tc := range tests {
@@ -48,7 +55,7 @@ func TestMd2png_Integration(t *testing.T) {
 	tempDir := t.TempDir()
 
 	inPath := filepath.Join(tempDir, "in.md")
-	if err := os.WriteFile(inPath, []byte("# Hello World"), 0644); err != nil {
+	if err := os.WriteFile(inPath, []byte("# Hello World"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,38 +133,60 @@ func TestMd2png_Integration(t *testing.T) {
 	}
 }
 
-func TestMd2png_Stdout(t *testing.T) {
-	tempDir := t.TempDir()
+func captureStdout(t *testing.T, fn func() error) ([]byte, error) {
+	t.Helper()
 
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	runErr := fn()
+	closeErr := w.Close()
+	os.Stdout = oldStdout
+	if closeErr != nil {
+		t.Fatalf("close stdout pipe: %v", closeErr)
+	}
+	defer func() { _ = r.Close() }()
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read stdout pipe: %v", err)
+	}
+	return buf.Bytes(), runErr
+}
+
+func TestMd2png_StdoutFormats(t *testing.T) {
+	tempDir := t.TempDir()
 	inPath := filepath.Join(tempDir, "in.md")
-	if err := os.WriteFile(inPath, []byte("# Hello World"), 0644); err != nil {
+	if err := os.WriteFile(inPath, []byte("# Hello World"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Intercept stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	outArg := "-"
-	err := Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-
-	if err != nil {
-		t.Fatalf("Md2png() error = %v", err)
+	tests := []struct {
+		format    string
+		signature []byte
+	}{
+		{"png", []byte("\x89PNG\r\n\x1a\n")},
+		{"jpeg", []byte("\xff\xd8\xff")},
+		{"gif", []byte("GIF8")},
 	}
 
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(r)
-
-	if buf.Len() == 0 {
-		t.Fatal("expected stdout output")
-	}
-
-	if !bytes.HasPrefix(buf.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
-		t.Fatalf("expected PNG signature in stdout")
+	for _, tc := range tests {
+		t.Run(tc.format, func(t *testing.T) {
+			outArg := "-"
+			output, err := captureStdout(t, func() error {
+				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format))
+			})
+			if err != nil {
+				t.Fatalf("Md2png() error = %v", err)
+			}
+			if !bytes.HasPrefix(output, tc.signature) {
+				t.Fatalf("stdout does not start with expected %s signature", tc.format)
+			}
+		})
 	}
 }
 
@@ -165,22 +194,20 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 	tempDir := t.TempDir()
 
 	inPath := filepath.Join(tempDir, "in.md")
-	if err := os.WriteFile(inPath, []byte("# Hello World"), 0644); err != nil {
+	if err := os.WriteFile(inPath, []byte("# Hello World"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	outPath := filepath.Join(tempDir, "out.png")
-	if err := os.WriteFile(outPath, []byte("original content"), 0644); err != nil {
+	if err := os.WriteFile(outPath, []byte("original content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// This should fail because format disagree
 	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"))
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
 
-	// Check that the original file is intact
 	content, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Fatal(err)
@@ -189,60 +216,123 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 		t.Errorf("expected original content, got %s", content)
 	}
 
-	// Check that there are no temporary files left in the directory
 	files, err := os.ReadDir(tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// We should only have in.md and out.png
 	if len(files) != 2 {
 		t.Errorf("expected 2 files in temp dir, got %d", len(files))
 	}
+}
 
-	var names []string
-	for _, f := range files {
-		names = append(names, f.Name())
+func TestEncodeToFileFailurePreservesDestination(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "out.png")
+	if err := os.WriteFile(outPath, []byte("original content"), 0o640); err != nil {
+		t.Fatal(err)
 	}
 
-	if !strings.Contains(strings.Join(names, " "), "out.png") {
-		t.Errorf("expected out.png in temp dir, got %v", names)
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	forcedErr := errors.New("forced encode failure")
+	err := encodeToFileWithEncoder(outPath, img, "png", func(w io.Writer, _ image.Image, _ string) error {
+		if _, err := w.Write([]byte("partial output")); err != nil {
+			return err
+		}
+		return forcedErr
+	})
+	if !errors.Is(err, forcedErr) {
+		t.Fatalf("expected forced encode failure, got %v", err)
+	}
+
+	content, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "original content" {
+		t.Fatalf("destination was modified after failed encode: %q", content)
+	}
+
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "md2png-tmp-") {
+			t.Fatalf("temporary file was not cleaned up: %s", entry.Name())
+		}
 	}
 }
 
+func TestEncodeToFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not portable to Windows")
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	tempDir := t.TempDir()
+
+	t.Run("new output", func(t *testing.T) {
+		outPath := filepath.Join(tempDir, "new.png")
+		if err := encodeToFile(outPath, img, "png"); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o644 {
+			t.Fatalf("new output mode = %04o, want 0644", got)
+		}
+	})
+
+	t.Run("replacement preserves mode", func(t *testing.T) {
+		outPath := filepath.Join(tempDir, "existing.png")
+		if err := os.WriteFile(outPath, []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(outPath, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if err := encodeToFile(outPath, img, "png"); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o640 {
+			t.Fatalf("replacement mode = %04o, want 0640", got)
+		}
+	})
+}
+
 func TestMd2png_StdinToStdout(t *testing.T) {
-	// Setup stdin
 	oldStdin := os.Stdin
-	rStdin, wStdin, _ := os.Pipe()
+	rStdin, wStdin, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.Stdin = rStdin
+	defer func() {
+		os.Stdin = oldStdin
+		_ = rStdin.Close()
+	}()
 
-	_, _ = wStdin.Write([]byte("# Stdin test\n"))
-	_ = wStdin.Close()
-
-	// Setup stdout
-	oldStdout := os.Stdout
-	rStdout, wStdout, _ := os.Pipe()
-	os.Stdout = wStdout
+	if _, err := wStdin.Write([]byte("# Stdin test\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := wStdin.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	outArg := "-"
-	err := Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
-
-	_ = wStdout.Close()
-	os.Stdout = oldStdout
-	os.Stdin = oldStdin
-
+	output, err := captureStdout(t, func() error {
+		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
+	})
 	if err != nil {
 		t.Fatalf("Md2png() error = %v", err)
 	}
-
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(rStdout)
-
-	if buf.Len() == 0 {
-		t.Fatal("expected stdout output")
-	}
-
-	if !bytes.HasPrefix(buf.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
-		t.Fatalf("expected PNG signature in stdout")
+	if !bytes.HasPrefix(output, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatal("expected PNG signature in stdout")
 	}
 }
