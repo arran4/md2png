@@ -29,7 +29,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := root.Execute(os.Args[1:]); err != nil {
+	// Narrow workaround for issue #112: dispatch `version` early to prevent
+	// the generated `Execute` from running `CommandAction` first, which has unwanted
+	// side effects (e.g. attempting to convert files in md2png or popping UI in md2view).
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "version" {
+		if verCmd, ok := root.Commands["version"]; ok {
+			if err := verCmd().Execute(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
+	if err := root.Execute(args); err != nil {
 		if e, ok := err.(*cmd.ErrExitCode); ok {
 			if e.Err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", e.Err)
