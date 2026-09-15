@@ -2,14 +2,32 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 )
 
+func normalizeFormat(value string) (string, error) {
+	switch strings.ToLower(value) {
+	case "png":
+		return "png", nil
+	case "jpg", "jpeg":
+		return "jpeg", nil
+	case "gif":
+		return "gif", nil
+	default:
+		return "", fmt.Errorf("unsupported output format %q (expected png, jpeg, or gif)", value)
+	}
+}
+
 func resolveFormat(outPath string, formatFlag *string) (string, error) {
 	var flagFormat string
-	if formatFlag != nil {
-		flagFormat = strings.ToLower(*formatFlag)
+	var err error
+	if formatFlag != nil && *formatFlag != "" {
+		flagFormat, err = normalizeFormat(*formatFlag)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	if outPath == "-" {
@@ -19,19 +37,17 @@ func resolveFormat(outPath string, formatFlag *string) (string, error) {
 		return flagFormat, nil
 	}
 
-	ext := strings.ToLower(filepath.Ext(outPath))
-	extFormat := ""
+	ext := filepath.Ext(outPath)
+	var extFormat string
 	if ext != "" {
-		extFormat = ext[1:] // remove leading dot
-		if extFormat == "jpg" {
-			extFormat = "jpeg"
+		extFormat, err = normalizeFormat(strings.TrimPrefix(ext, "."))
+		if err != nil {
+			return "", err
 		}
 	}
 
-	if flagFormat != "" && extFormat != "" {
-		if flagFormat != extFormat {
-			return "", errors.New("extension and --format disagree")
-		}
+	if flagFormat != "" && extFormat != "" && flagFormat != extFormat {
+		return "", errors.New("extension and --format disagree")
 	}
 
 	if flagFormat != "" {
