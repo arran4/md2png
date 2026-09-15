@@ -25,7 +25,32 @@ func encodeImage(w io.Writer, img image.Image, format string) error {
 	}
 }
 
+func outputFileMode(outPath string) (os.FileMode, error) {
+	info, err := os.Stat(outPath)
+	if err == nil {
+		return info.Mode().Perm(), nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("failed to inspect destination file: %w", err)
+	}
+	return 0o644, nil
+}
+
 func encodeToFile(outPath string, img image.Image, format string) error {
+	return encodeToFileWithEncoder(outPath, img, format, encodeImage)
+}
+
+func encodeToFileWithEncoder(
+	outPath string,
+	img image.Image,
+	format string,
+	encoder func(io.Writer, image.Image, string) error,
+) error {
+	mode, err := outputFileMode(outPath)
+	if err != nil {
+		return err
+	}
+
 	dir := filepath.Dir(outPath)
 	tmpFile, err := os.CreateTemp(dir, "md2png-tmp-*")
 	if err != nil {
@@ -33,10 +58,15 @@ func encodeToFile(outPath string, img image.Image, format string) error {
 	}
 	tmpName := tmpFile.Name()
 
-	// Ensure cleanup if things fail. If rename succeeds, this will try to remove a non-existent file, which is safe to ignore error.
+	// Ensure cleanup if anything fails before the rename completes.
 	defer func() { _ = os.Remove(tmpName) }()
 
-	if err := encodeImage(tmpFile, img, format); err != nil {
+	if err := tmpFile.Chmod(mode); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to set temporary file permissions: %w", err)
+	}
+
+	if err := encoder(tmpFile, img, format); err != nil {
 		_ = tmpFile.Close()
 		return fmt.Errorf("failed to encode image: %w", err)
 	}
