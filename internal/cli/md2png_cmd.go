@@ -3,14 +3,9 @@ package cli
 import (
 	"github.com/arran4/md2png"
 
-	"errors"
-	"image/gif"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Md2png is a subcommand md2png that renders Markdown to an image
@@ -27,6 +22,7 @@ func Md2png(
 	footnoteLinks *bool, // flag: --footnote-links Add footnotes for link destinations (default: true)
 	footnoteImages *bool, // flag: --footnote-images Add footnotes for image destinations (default: false)
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
+	format *string, // flag: --format Output format: png, jpeg, or gif
 ) error {
 	var data []byte
 	var baseDir string
@@ -39,6 +35,11 @@ func Md2png(
 	outPath := "out.png"
 	if out != nil {
 		outPath = *out
+	}
+
+	resolvedFormat, err := resolveFormat(outPath, format)
+	if err != nil {
+		return err
 	}
 
 	if inPath == "" {
@@ -72,29 +73,9 @@ func Md2png(
 		return err
 	}
 
-	file, err := os.Create(outPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	ext := strings.ToLower(filepath.Ext(outPath))
-	switch ext {
-	case ".png":
-		if err := png.Encode(file, img); err != nil {
-			return err
-		}
-	case ".jpg", ".jpeg":
-		if err := jpeg.Encode(file, img, &jpeg.Options{Quality: 92}); err != nil {
-			return err
-		}
-	case ".gif":
-		if err := gif.Encode(file, img, nil); err != nil {
-			return err
-		}
-	default:
-		return errors.New("unsupported output extension: " + ext)
+	if outPath == "-" {
+		return encodeImage(os.Stdout, img, resolvedFormat)
 	}
 
-	return nil
+	return encodeToFile(outPath, img, resolvedFormat)
 }

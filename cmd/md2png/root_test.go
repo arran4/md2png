@@ -41,6 +41,8 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "--footnote-images")
 	args = append(args, "--max-height")
 	args = append(args, "1")
+	args = append(args, "--format")
+	args = append(args, "test")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -109,6 +111,11 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected maxHeight to be non-nil")
 	} else if *cmd.maxHeight != 1 {
 		t.Errorf("Expected maxHeight to be 1, got '%v'", *cmd.maxHeight)
+	}
+	if cmd.format == nil {
+		t.Errorf("Expected format to be non-nil")
+	} else if *cmd.format != "test" {
+		t.Errorf("Expected format to be 'test', got '%v'", *cmd.format)
 	}
 
 }

@@ -85,6 +85,7 @@ type RootCmd struct {
 	footnoteLinks  *bool
 	footnoteImages *bool
 	maxHeight      *int
+	format         *string
 	CommandAction  func(c *RootCmd) error
 }
 
@@ -207,9 +208,14 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.Func("format", "flag: Output format: png, jpeg, or gif", func(s string) error {
+		c.format = &s
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight)
+		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -450,6 +456,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
 				}
 				c.maxHeight = &iv
+
+			case "format":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.format = &s
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)
 			}
