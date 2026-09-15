@@ -9,14 +9,6 @@ import (
 )
 
 func TestGoReleaserSnapshotConfiguration(t *testing.T) {
-	// The prompt requests "Where practical within the repository's existing tooling, add a GoReleaser
-	// configuration/snapshot smoke check that exercises or validates the metadata
-	// ldflags without publishing anything."
-
-	// We check if `.goreleaser.yaml` is using `.Tag` for version, `.Commit` for commit, etc.
-	// We read the actual file rather than running `go run github.com/goreleaser/goreleaser/v2@latest`
-	// to avoid non-deterministic network dependency from `@latest` in the standard test suite.
-
 	configBytes, err := os.ReadFile("../.goreleaser.yaml")
 	if err != nil {
 		t.Fatalf("Failed to read .goreleaser.yaml: %v", err)
@@ -29,9 +21,34 @@ func TestGoReleaserSnapshotConfiguration(t *testing.T) {
 		"-X main.date={{.Date}}",
 	}
 
-	for _, flag := range requiredLDFlags {
-		if !strings.Contains(config, flag) {
-			t.Errorf("GoReleaser config is missing required ldflag: %s", flag)
+	// Make sure we validate ldflags for both md2png and md2view independently
+	buildSections := []string{
+		"  - id: md2png",
+		"  - id: md2view",
+	}
+
+	for _, sectionHeader := range buildSections {
+		startIdx := strings.Index(config, sectionHeader)
+		if startIdx == -1 {
+			t.Fatalf("Could not find section %q in .goreleaser.yaml", sectionHeader)
+		}
+
+		// Find where this section roughly ends (e.g., the next `  - id:` or `archives:`)
+		restOfConfig := config[startIdx+len(sectionHeader):]
+		endIdx := strings.Index(restOfConfig, "\n  - id:")
+		if endIdx == -1 {
+			endIdx = strings.Index(restOfConfig, "\narchives:")
+		}
+		if endIdx == -1 {
+			endIdx = len(restOfConfig)
+		}
+
+		section := restOfConfig[:endIdx]
+
+		for _, flag := range requiredLDFlags {
+			if !strings.Contains(section, flag) {
+				t.Errorf("Build section %q is missing required ldflag: %s", sectionHeader, flag)
+			}
 		}
 	}
 
@@ -55,7 +72,6 @@ func TestGoReleaserSnapshotConfiguration(t *testing.T) {
 		}
 
 		outStr := out.String()
-		// goreleaser check might return exit status 2 if it's "configuration is valid, but uses deprecated properties"
 		if strings.Contains(outStr, "configuration is valid, but uses deprecated properties") {
 			t.Logf("Configuration is valid, but has deprecations.\n%s", outStr)
 		} else {
