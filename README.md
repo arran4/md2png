@@ -74,10 +74,10 @@ Dark theme, wider frame, larger type:
 ./md2png --in blogpost.md --out post.png --theme dark --width 1400 --pt 18
 ```
 
-Produce an animated GIF (palette handled for you):
+Produce a GIF (palette handled for you):
 
 ```bash
-./md2png --in slides.md --out slides.gif
+./md2png --in document.md --out document.gif
 ```
 
 Use your own fonts:

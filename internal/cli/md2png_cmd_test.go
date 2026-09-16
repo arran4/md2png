@@ -106,8 +106,14 @@ func TestMd2png_Integration(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer func() { _ = f.Close() }()
-				if _, err := gif.Decode(f); err != nil {
-					t.Errorf("failed to decode as GIF: %v", err)
+
+				// Issue #64 requires explicit test to verify GIF output is single-frame
+				g, err := gif.DecodeAll(f)
+				if err != nil {
+					t.Fatalf("failed to decode gif: %v", err)
+				}
+				if len(g.Image) != 1 {
+					t.Errorf("expected exactly 1 frame in GIF, got %d", len(g.Image))
 				}
 			},
 		},
