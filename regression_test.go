@@ -45,8 +45,13 @@ func compareImage(t *testing.T, expectedPath string, actualImg image.Image) {
 	}
 }
 
-func getDeterministicOptions() RenderOptions {
-	fonts, _ := LoadFonts(FontConfig{SizeBase: 16})
+func getDeterministicOptions(t *testing.T) RenderOptions {
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+	if err != nil {
+		if t != nil {
+			t.Fatalf("load fonts: %v", err)
+		}
+	}
 	return RenderOptions{
 		Width:        600,
 		BaseFontSize: 16,
@@ -72,14 +77,14 @@ func TestRendererDeterministicRegression(t *testing.T) {
 		{"local_images", "![local image](testdata/test_image.png)", nil},
 		{"footnotes", "Here is a [link](https://example.com) and an ![image](testdata/test_image.png).", func() *RenderOptions {
 			yes := true
-			opts := getDeterministicOptions()
+			opts := getDeterministicOptions(nil)
 			opts.LinkFootnotes = &yes
 			opts.ImageFootnotes = &yes
 			return &opts
 		}()},
 		{"unsupported_nodes", "<div>Raw HTML is unsupported natively</div>", nil},
 		{"dark_theme", "# Dark Theme\n\nThis is dark theme.", func() *RenderOptions {
-			opts := getDeterministicOptions()
+			opts := getDeterministicOptions(nil)
 			opts.Theme = darkTheme
 			return &opts
 		}()},
@@ -87,7 +92,7 @@ func TestRendererDeterministicRegression(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := getDeterministicOptions()
+			opts := getDeterministicOptions(t)
 			if tc.opts != nil {
 				opts = *tc.opts
 			}
@@ -102,21 +107,73 @@ func TestRendererDeterministicRegression(t *testing.T) {
 }
 
 func FuzzRenderer(f *testing.F) {
-	f.Add([]byte("# Hello\n\nWorld"))
-	f.Add([]byte("```\ncode\n```"))
-	f.Add([]byte("- list\n- items"))
-	f.Add([]byte("> quote\n> block"))
-	f.Add([]byte("| A | B |\n|---|---|\n| C | D |"))
-	f.Add([]byte("This is a very long text block that should trigger word wrapping multiple times to test the line breaking logic when strings exceed the maximum width allowed by the canvas."))
+	f.Add([]byte("# Hello\n\nWorld"), 200, 1000)
+	f.Add([]byte("```\ncode\n```"), 400, 2000)
+	f.Add([]byte("- list\n- items"), 300, 1500)
+	f.Add([]byte("> quote\n> block"), 500, 2000)
+	f.Add([]byte("| A | B |\n|---|---|\n| C | D |"), 400, 1200)
+	f.Add([]byte("This is a very long text block that should trigger word wrapping multiple times to test the line breaking logic when strings exceed the maximum width allowed by the canvas."), 150, 1500)
+	f.Add([]byte("![img](http://example.com/a.png)"), 200, 1000) // remote parsing mock
+	f.Add([]byte("[link](http://example.com)"), 200, 1000)
 
-	f.Fuzz(func(t *testing.T, data []byte) {
-		opts := getDeterministicOptions()
-		opts.Width = 200
-		opts.MaxHeight = 1000
-		opts.ImagePolicy = &ImagePolicy{
-			AllowLocal:  false,
-			AllowRemote: false,
+	// deeply nested
+	f.Add([]byte(">>>>>>>>>> deeply nested quote"), 300, 3000)
+	f.Add([]byte("- - - - - - deeply nested list"), 300, 3000)
+
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+
+	if err != nil {
+		f.Fatalf("failed to load fonts: %v", err)
+	}
+	f.Fuzz(func(t *testing.T, data []byte, width int, maxHeight int) {
+		// Cap inputs to reasonable bounds to avoid fuzzing hanging
+		if width < 10 || width > 2000 {
+			width = 400
 		}
-		_, _ = Render(data, opts)
+		if maxHeight < 100 || maxHeight > 4000 {
+			maxHeight = 2000
+		}
+
+		opts := RenderOptions{
+			Width:        width,
+			BaseFontSize: 16,
+			Margin:       10,
+			Theme:        lightTheme,
+			Fonts:        fonts,
+			MaxHeight:    maxHeight,
+			ImagePolicy: &ImagePolicy{
+				AllowLocal:  false,
+				AllowRemote: false,
+			},
+		}
+
+		img, err := Render(data, opts)
+
+		if err == nil {
+			if img == nil {
+				t.Fatalf("Render returned nil image and nil error")
+			}
+			bounds := img.Bounds()
+			if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+				t.Fatalf("Render returned image with invalid bounds: %v", bounds)
+			}
+			if bounds.Dy() > maxHeight {
+				t.Fatalf("Render returned image exceeding max height (%d > %d)", bounds.Dy(), maxHeight)
+			}
+		}
+
+		// Run a second time to ensure deterministic error/success behaviour
+		img2, err2 := Render(data, opts)
+		if (err == nil) != (err2 == nil) {
+			t.Fatalf("Deterministic behaviour failure: err1=%v, err2=%v", err, err2)
+		}
+		if err != nil && err2 != nil && err.Error() != err2.Error() {
+			t.Fatalf("Deterministic behaviour failure on error: %v != %v", err, err2)
+		}
+		if img != nil && img2 != nil {
+			if img.Bounds() != img2.Bounds() {
+				t.Fatalf("Deterministic behaviour failure on bounds: %v != %v", img.Bounds(), img2.Bounds())
+			}
+		}
 	})
 }
