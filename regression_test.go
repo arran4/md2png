@@ -40,7 +40,7 @@ func compareImage(t *testing.T, expectedPath string, actualImg image.Image) {
 
 	if !bytes.Equal(expectedBytes, actualBytes) {
 		actualPath := expectedPath + ".actual.png"
-		os.WriteFile(actualPath, actualBytes, 0644)
+		_ = os.WriteFile(actualPath, actualBytes, 0644)
 		t.Errorf("Image mismatch for %s. Actual image written to %s", expectedPath, actualPath)
 	}
 }
