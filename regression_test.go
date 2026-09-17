@@ -77,14 +77,14 @@ func TestRendererDeterministicRegression(t *testing.T) {
 		{"local_images", "![local image](testdata/test_image.png)", nil},
 		{"footnotes", "Here is a [link](https://example.com) and an ![image](testdata/test_image.png).", func() *RenderOptions {
 			yes := true
-			opts := getDeterministicOptions(nil)
+			opts := getDeterministicOptions(t)
 			opts.LinkFootnotes = &yes
 			opts.ImageFootnotes = &yes
 			return &opts
 		}()},
 		{"unsupported_nodes", "<div>Raw HTML is unsupported natively</div>", nil},
 		{"dark_theme", "# Dark Theme\n\nThis is dark theme.", func() *RenderOptions {
-			opts := getDeterministicOptions(nil)
+			opts := getDeterministicOptions(t)
 			opts.Theme = darkTheme
 			return &opts
 		}()},
@@ -174,6 +174,115 @@ func FuzzRenderer(f *testing.F) {
 			if img.Bounds() != img2.Bounds() {
 				t.Fatalf("Deterministic behaviour failure on bounds: %v != %v", img.Bounds(), img2.Bounds())
 			}
+		}
+	})
+}
+
+func FuzzOptionsValidation(f *testing.F) {
+	f.Add(600, 20, 16.0, 8000, true)         // valid
+	f.Add(0, 0, 0.0, 0, false)               // zero vals
+	f.Add(-100, -10, -1.0, -1000, true)      // negative
+	f.Add(40000, 1000, 2000.0, 50000, false) // extreme bounds
+	f.Add(100, 50, 16.0, 1000, true)         // margin covers width
+
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+	if err != nil {
+		f.Fatalf("failed to load fonts: %v", err)
+	}
+
+	data := []byte("# Option Fuzzing\n\nTesting edge cases.")
+
+	f.Fuzz(func(t *testing.T, width int, margin int, fontSize float64, maxHeight int, isDark bool) {
+		theme := lightTheme
+		if isDark {
+			theme = darkTheme
+		}
+
+		opts := RenderOptions{
+			Width:        width,
+			Margin:       margin,
+			BaseFontSize: fontSize,
+			MaxHeight:    maxHeight,
+			Theme:        theme,
+			Fonts:        fonts,
+			ImagePolicy: &ImagePolicy{
+				AllowLocal:  false,
+				AllowRemote: false,
+			},
+		}
+
+		// 1. First run
+		img1, err1 := Render(data, opts)
+
+		if err1 == nil {
+			if img1 == nil {
+				t.Fatalf("success but nil image")
+			}
+			b := img1.Bounds()
+			if b.Dx() <= 0 || b.Dy() <= 0 {
+				t.Fatalf("success but invalid bounds %v", b)
+			}
+			// if options explicitly passed, rendering should not exceed limits
+			// but we didn't sanitize. Render should return ErrResourceLimit or something for too big sizes
+			// But if it *does* succeed, it shouldn't exceed the supplied or default limits
+			limit := maxHeight
+			if limit <= 0 {
+				limit = 32768
+			}
+			if b.Dy() > limit {
+				t.Fatalf("height %d exceeds limit %d", b.Dy(), limit)
+			}
+		}
+
+		// 2. Determinism check
+		img2, err2 := Render(data, opts)
+		if (err1 == nil) != (err2 == nil) {
+			t.Fatalf("nondeterministic error state: %v vs %v", err1, err2)
+		}
+		if err1 != nil && err2 != nil && err1.Error() != err2.Error() {
+			t.Fatalf("nondeterministic error text: %v vs %v", err1, err2)
+		}
+		if img1 != nil && img2 != nil && img1.Bounds() != img2.Bounds() {
+			t.Fatalf("nondeterministic bounds: %v vs %v", img1.Bounds(), img2.Bounds())
+		}
+	})
+}
+
+func FuzzImageDestinations(f *testing.F) {
+	f.Add("local.png")
+	f.Add("http://example.com/remote.png")
+	f.Add("https://example.com/img.jpg?a=b")
+	f.Add("../relative/path.png")
+	f.Add("file:///etc/passwd")
+	f.Add("weird://schema/img")
+	f.Add("")
+	f.Add("  space  ")
+
+	fonts, err := LoadFonts(FontConfig{SizeBase: 16})
+	if err != nil {
+		f.Fatalf("failed to load fonts: %v", err)
+	}
+
+	f.Fuzz(func(t *testing.T, dest string) {
+		data := []byte("![img](" + dest + ")")
+		opts := RenderOptions{
+			Width:     400,
+			MaxHeight: 2000,
+			Fonts:     fonts,
+			ImagePolicy: &ImagePolicy{
+				AllowLocal:  false, // completely block IO
+				AllowRemote: false,
+			},
+		}
+		// Should parse and gracefully fail or ignore the image, but not panic
+		img1, err1 := Render(data, opts)
+		img2, err2 := Render(data, opts)
+
+		if (err1 == nil) != (err2 == nil) {
+			t.Fatalf("nondeterministic error state: %v vs %v", err1, err2)
+		}
+		if img1 != nil && img2 != nil && img1.Bounds() != img2.Bounds() {
+			t.Fatalf("nondeterministic bounds")
 		}
 	})
 }
