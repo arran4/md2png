@@ -29,9 +29,12 @@ func TestDiagnostics(t *testing.T) {
 				FailOnRawHTML: true,
 			},
 		}
-		_, err := RenderWithDiagnostics(md, opts)
+		res, err := RenderWithDiagnostics(md, opts)
 		if err == nil {
 			t.Fatal("Expected error due to strict raw HTML policy, got nil")
+		}
+		if len(res.Diagnostics) == 0 {
+			t.Fatal("Expected diagnostics on strict raw HTML policy failure, got none")
 		}
 		if !strings.Contains(err.Error(), "Raw HTML is intentionally stripped") {
 			t.Fatalf("Unexpected error message: %v", err)
@@ -45,9 +48,12 @@ func TestDiagnostics(t *testing.T) {
 				FailOnImageError: true,
 			},
 		}
-		_, err := RenderWithDiagnostics(mdImg, opts)
+		res, err := RenderWithDiagnostics(mdImg, opts)
 		if err == nil {
 			t.Fatal("Expected error due to strict image error policy, got nil")
+		}
+		if len(res.Diagnostics) == 0 {
+			t.Fatal("Expected diagnostics on strict image error policy failure, got none")
 		}
 		if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "Failed to load") {
 			t.Fatalf("Unexpected error message: %v", err)

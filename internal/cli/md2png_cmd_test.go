@@ -346,7 +346,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 func TestMd2pngStrict(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.png")
 	inPath := filepath.Join(t.TempDir(), "in.md")
-	os.WriteFile(inPath, []byte("![missing](missing.png)"), 0644)
+	if err := os.WriteFile(inPath, []byte("![missing](missing.png)"), 0644); err != nil { t.Fatal(err) }
 
 	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true))
 	if err == nil {

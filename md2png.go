@@ -2181,7 +2181,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	}
 	r.ensureImageResolvers()
 	if err := r.render(data); err != nil {
-		return RenderResult{}, err
+		return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
 	}
 
 	used := c.cursorY + opts.Margin
