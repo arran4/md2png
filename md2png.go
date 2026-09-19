@@ -1024,10 +1024,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 
 				if r.diagPolicy.FailOnImageError ||
 					errors.Is(err, context.DeadlineExceeded) ||
-					errors.Is(err, context.Canceled) ||
-					errors.Is(err, ErrPolicyDenied) ||
-					errors.Is(err, ErrResourceLimit) ||
-					errors.Is(err, ErrSandboxViolation) {
+					errors.Is(err, context.Canceled) {
 
 					diag.Severity = SeverityError
 					r.addDiagnostic(diag)
