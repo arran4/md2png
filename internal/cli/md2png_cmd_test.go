@@ -378,20 +378,29 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 	os.Stderr = wErr
 
 	outPath := "-"
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
 
-	wOut.Close()
-	wErr.Close()
+	outBytes, readErrOut := io.ReadAll(rOut)
+	errBytes, readErrErr := io.ReadAll(rErr)
 
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 
+	err := <-errChan
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-
-	outBytes, _ := io.ReadAll(rOut)
-	errBytes, _ := io.ReadAll(rErr)
+	if readErrOut != nil {
+		t.Fatalf("Error reading stdout pipe: %v", readErrOut)
+	}
+	if readErrErr != nil {
+		t.Fatalf("Error reading stderr pipe: %v", readErrErr)
+	}
 
 	if len(outBytes) == 0 {
 		t.Errorf("Expected valid image bytes on stdout, got empty")
@@ -405,5 +414,40 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 	}
 	if strings.Contains(string(outBytes), "md2png: [Warning]") {
 		t.Errorf("Expected stdout to remain uncontaminated by diagnostic text")
+	}
+
+	// Test strict mode failure produces no output on stdout and error on stderr
+	oldStdout = os.Stdout
+	oldStderr = os.Stderr
+
+	rOut, wOut, _ = os.Pipe()
+	rErr, wErr, _ = os.Pipe()
+
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	errChan2 := make(chan error, 1)
+	go func() {
+		errChan2 <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+
+	outBytesStrict, _ := io.ReadAll(rOut)
+	errBytesStrict, _ := io.ReadAll(rErr)
+
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	errStrict := <-errChan2
+	if errStrict == nil {
+		t.Fatalf("Expected error in strict mode")
+	}
+
+	if len(outBytesStrict) != 0 {
+		t.Errorf("Expected strict failure to not write any output to stdout")
+	}
+	if !strings.Contains(string(errBytesStrict), "md2png: [Error] raw_html:") {
+		t.Errorf("Expected diagnostic error on stderr during strict failure, got: %q", string(errBytesStrict))
 	}
 }

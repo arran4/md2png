@@ -1,7 +1,11 @@
 package md2png
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -193,10 +197,36 @@ func TestSafeHTML_ExactExtraction(t *testing.T) {
 }
 
 func TestHTMLResourceNetworkAccess(t *testing.T) {
-	// A helper to verify the renderer isn't making network requests due to HTML parsing
-	md := []byte(`This is <img src="http://127.0.0.1:40000/nope.png"> an image test.`)
+	var requestCount int32
 
-	opts := RenderOptions{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Use actual markdown image parsing too just to ensure our baseline fetch tracking works!
+	mdWithStandardImage := []byte(fmt.Sprintf("This is an image ![test](%s/img.png)", server.URL))
+
+	// Enable remote policy to prove we allow standard rendering but NOT raw html evaluating
+	opts := RenderOptions{
+		ImagePolicy: &ImagePolicy{
+			AllowRemote: true,
+			HTTPClient:  server.Client(),
+		},
+	}
+
+	_, _ = RenderWithDiagnostics(mdWithStandardImage, opts)
+	if atomic.LoadInt32(&requestCount) != 1 {
+		t.Fatalf("Expected exactly 1 request from baseline standard Markdown image rendering to prove tracking works, got %d", requestCount)
+	}
+
+	// Reset counter
+	atomic.StoreInt32(&requestCount, 0)
+
+	// Test actual raw HTML
+	md := []byte(fmt.Sprintf(`This is <img src="%s/nope.png"> an image test.`, server.URL))
+
 	res, err := RenderWithDiagnostics(md, opts)
 
 	if err != nil {
@@ -207,10 +237,14 @@ func TestHTMLResourceNetworkAccess(t *testing.T) {
 		t.Fatalf("Expected an image result")
 	}
 
+	if atomic.LoadInt32(&requestCount) > 0 {
+		t.Fatalf("Renderer actually tried to load the image via network! Expected no network request for raw HTML.")
+	}
+
 	foundRawDiag := false
 	for _, diag := range res.Diagnostics {
 		if diag.Code == DiagImageLoadFailed {
-			t.Fatalf("Renderer actually tried to load the image! Expected no network request.")
+			t.Fatalf("Renderer reported DiagImageLoadFailed despite not being expected to evaluate raw HTML network resources.")
 		}
 		if diag.Code == DiagRawHTML {
 			foundRawDiag = true

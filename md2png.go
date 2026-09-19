@@ -1070,10 +1070,15 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
 			}
 		case *ast.RawHTML:
+			offset := 0
+			if c.Segments.Len() > 0 {
+				offset = c.Segments.At(0).Start
+			}
 			diag := Diagnostic{
 				Code:     DiagRawHTML,
 				Severity: SeverityWarning,
 				NodeType: "RawHTML",
+				Offset:   offset,
 				Message:  "Raw HTML is intentionally stripped/degraded: RawHTML",
 			}
 			if r.diagPolicy.FailOnRawHTML {
@@ -1816,8 +1821,10 @@ func (r *renderer) render(md []byte) error {
 			return ast.WalkContinue, nil
 		case *ast.RawHTML, *ast.HTMLBlock:
 			offset := 0
-			if nd.Lines().Len() > 0 {
-				offset = nd.Lines().At(0).Start
+			if htmlBlock, ok := nd.(*ast.HTMLBlock); ok && htmlBlock.Lines().Len() > 0 {
+				offset = htmlBlock.Lines().At(0).Start
+			} else if rawHTML, ok := nd.(*ast.RawHTML); ok && rawHTML.Segments.Len() > 0 {
+				offset = rawHTML.Segments.At(0).Start
 			}
 			diag := Diagnostic{
 				Code:     DiagRawHTML,

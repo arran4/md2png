@@ -564,7 +564,7 @@ func TestPolicy_StrictImagePolicy(t *testing.T) {
 		t.Errorf("StrictImagePolicy should have SandboxLocal = true")
 	}
 
-	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},ImagePolicy: &strict}
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true}, ImagePolicy: &strict}
 	_, err := Render([]byte("![local](foo.png)"), opts)
 	if !errors.Is(err, ErrPolicyDenied) {
 		t.Fatalf("expected ErrPolicyDenied for local image under strict policy, got: %v", err)
