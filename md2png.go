@@ -1579,8 +1579,10 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 }
 
 func (r *renderer) addDiagnostic(d Diagnostic) {
-	if r.diagPolicy.IgnoreCodes != nil && r.diagPolicy.IgnoreCodes[d.Code] {
-		return
+	if d.Severity != SeverityError {
+		if r.diagPolicy.IgnoreCodes != nil && r.diagPolicy.IgnoreCodes[d.Code] {
+			return
+		}
 	}
 	r.diagnostics = append(r.diagnostics, d)
 }
@@ -1596,7 +1598,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 	str := string(input)
 
 	for i < len(str) {
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<script") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<script>") || strings.HasPrefix(strings.ToLower(str[i:]), "<script ") {
 			inScript = true
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1606,12 +1608,17 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</script>") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "</script>") || strings.HasPrefix(strings.ToLower(str[i:]), "</script >") {
 			inScript = false
-			i += 9
+			for i < len(str) && str[i] != '>' {
+				i++
+			}
+			if i < len(str) {
+				i++
+			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<style") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<style>") || strings.HasPrefix(strings.ToLower(str[i:]), "<style ") {
 			inStyle = true
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1621,9 +1628,14 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</style>") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "</style>") || strings.HasPrefix(strings.ToLower(str[i:]), "</style >") {
 			inStyle = false
-			i += 8
+			for i < len(str) && str[i] != '>' {
+				i++
+			}
+			if i < len(str) {
+				i++
+			}
 			continue
 		}
 		if strings.HasPrefix(str[i:], "<!--") {
@@ -1635,7 +1647,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<br") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<br>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br/>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br />") {
 			j := i
 			for j < len(str) && str[j] != '>' {
 				j++
@@ -1677,16 +1689,16 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 }
 
 func (r *renderer) renderUnsupported(node ast.Node) {
-	line := 0
+	offset := 0
 	if node.Lines().Len() > 0 {
-		line = node.Lines().At(0).Start
+		offset = node.Lines().At(0).Start
 	}
 
 	d := Diagnostic{
 		Code:     DiagUnsupportedNode,
 		Severity: SeverityWarning,
 		NodeType: node.Kind().String(),
-		Line:     line,
+		Offset:   offset,
 		Message:  fmt.Sprintf("Unsupported node type: %s", node.Kind().String()),
 	}
 
@@ -1806,15 +1818,15 @@ func (r *renderer) render(md []byte) error {
 			// Handled by parents (Paragraph/List/Heading)
 			return ast.WalkContinue, nil
 		case *ast.RawHTML, *ast.HTMLBlock:
-			line := 0
+			offset := 0
 			if nd.Lines().Len() > 0 {
-				line = nd.Lines().At(0).Start
+				offset = nd.Lines().At(0).Start
 			}
 			diag := Diagnostic{
 				Code:     DiagRawHTML,
 				Severity: SeverityWarning,
 				NodeType: nd.Kind().String(),
-				Line:     line,
+				Offset:   offset,
 				Message:  fmt.Sprintf("Raw HTML is intentionally stripped/degraded: %s", nd.Kind().String()),
 			}
 			if r.diagPolicy.FailOnRawHTML {
@@ -2021,7 +2033,7 @@ type Diagnostic struct {
 	Destination string // Target URI/path (if applicable, e.g. for image)
 	Message     string // Human-readable detail
 	Error       error  // Underlying cause, if applicable
-	Line        int    // Source line number, 0 if unknown
+	Offset      int    // Source byte offset, 0 if unknown
 }
 
 func (d Diagnostic) String() string {
@@ -2032,8 +2044,8 @@ func (d Diagnostic) String() string {
 	if d.Destination != "" {
 		msg += fmt.Sprintf(" (dest: %s)", d.Destination)
 	}
-	if d.Line > 0 {
-		msg += fmt.Sprintf(" at line %d", d.Line)
+	if d.Offset > 0 {
+		msg += fmt.Sprintf(" at offset %d", d.Offset)
 	}
 	return msg
 }

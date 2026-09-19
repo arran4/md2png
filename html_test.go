@@ -1,6 +1,7 @@
 package md2png
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,14 @@ func TestSafeHTML(t *testing.T) {
 			wantDiag:   DiagRawHTML,
 			expectText: nil,
 		},
+		{
+			name:       "False prefix matching",
+			md:         "<scripture>text</scripture>",
+			strict:     false,
+			wantErr:    false,
+			wantDiag:   DiagRawHTML,
+			expectText: []string{"text"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -94,9 +103,21 @@ func TestSafeHTML(t *testing.T) {
 				t.Errorf("expected diagnostic %v, but was not found in %v", tt.wantDiag, res.Diagnostics)
 			}
 
-			// Note: the test doesn't assert that the extracted text is perfectly visually rendered,
-			// just testing safe extraction visually is hard. We test that no panic happens and
-			// diagnostics are raised properly.
+			r := &renderer{}
+			extracted := r.safeExtractHTMLText([]byte(tt.md))
+
+			for _, expectedText := range tt.expectText {
+				found := false
+				for _, actualText := range extracted {
+					if strings.Contains(actualText, expectedText) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected extracted text to contain %q, but got %v", expectedText, extracted)
+				}
+			}
 		})
 	}
 }
