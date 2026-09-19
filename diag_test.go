@@ -3,6 +3,7 @@ package md2png
 import (
 	"strings"
 	"testing"
+	"github.com/yuin/goldmark/ast"
 )
 
 func TestDiagnostics(t *testing.T) {
@@ -195,14 +196,34 @@ func TestDiagnosticIgnoreCodes(t *testing.T) {
 }
 
 func TestDiagnosticsStrictUnsupportedNode(t *testing.T) {
-	// md2png doesn't support Markdown tables without the GFM extension implicitly enabled in Walk
-	// We will create a fake unsupported node scenario via a normal extension parse fallback
-	// Or we can just create a simple scenario if we know a block type that is explicitly not supported.
-	// Actually md2png explicitly supports Tables. However, the exact policy guarantees it fails when an unsupported node *is* reached.
-	// We can pass empty bytes and assume it won't hit it, so let's just directly invoke the renderer `renderUnsupported` if we can.
+	// Create a dummy node that is a block but not natively handled by md2png
+	node := ast.NewDocument() // Reusing Document or a Custom node to hit the default case.
 
-	// Because testing the precise fallback from goldmark is hard without a custom extension, let's just make sure
-	// the policy struct handles FailOnUnsupported gracefully during our other flows or test a known edge case:
+	opts := RenderOptions{
+		DiagnosticPolicy: &DiagnosticPolicy{
+			FailOnUnsupported: true,
+		},
+	}
+	_ = normalizeRenderOptions(&opts)
+
+	r := &renderer{
+		diagPolicy: *opts.DiagnosticPolicy,
+		c: newCanvas(100, 10, opts.Theme, opts.Fonts, 16, 100),
+	}
+	r.renderUnsupported(node)
+
+	if r.renderErr == nil {
+		t.Fatal("Expected error when FailOnUnsupported is true")
+	}
+	if len(r.diagnostics) == 0 {
+		t.Fatal("Expected diagnostics to be preserved on strict unsupported failure")
+	}
+	if r.diagnostics[0].Code != DiagUnsupportedNode {
+		t.Errorf("Expected DiagUnsupportedNode, got %v", r.diagnostics[0].Code)
+	}
+	if r.diagnostics[0].Severity != SeverityError {
+		t.Errorf("Expected SeverityError, got %v", r.diagnostics[0].Severity)
+	}
 }
 
 func TestDiagnosticOrderAndCodesPrecise(t *testing.T) {
