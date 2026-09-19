@@ -1595,7 +1595,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 	str := string(input)
 
 	for i < len(str) {
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<script>") || strings.HasPrefix(strings.ToLower(str[i:]), "<script ") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<script>") || strings.HasPrefix(strings.ToLower(str[i:]), "<script ") || strings.HasPrefix(strings.ToLower(str[i:]), "<script\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<script\n") {
 			inScript = true
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1605,7 +1605,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</script>") || strings.HasPrefix(strings.ToLower(str[i:]), "</script >") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "</script>") || strings.HasPrefix(strings.ToLower(str[i:]), "</script >") || strings.HasPrefix(strings.ToLower(str[i:]), "</script\t") || strings.HasPrefix(strings.ToLower(str[i:]), "</script\n") {
 			inScript = false
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1615,7 +1615,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<style>") || strings.HasPrefix(strings.ToLower(str[i:]), "<style ") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<style>") || strings.HasPrefix(strings.ToLower(str[i:]), "<style ") || strings.HasPrefix(strings.ToLower(str[i:]), "<style\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<style\n") {
 			inStyle = true
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1625,7 +1625,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</style>") || strings.HasPrefix(strings.ToLower(str[i:]), "</style >") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "</style>") || strings.HasPrefix(strings.ToLower(str[i:]), "</style >") || strings.HasPrefix(strings.ToLower(str[i:]), "</style\t") || strings.HasPrefix(strings.ToLower(str[i:]), "</style\n") {
 			inStyle = false
 			for i < len(str) && str[i] != '>' {
 				i++
@@ -1644,7 +1644,7 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<br>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br/>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br />") {
+		if strings.HasPrefix(strings.ToLower(str[i:]), "<br>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br/>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br />") || strings.HasPrefix(strings.ToLower(str[i:]), "<br\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<br\n") {
 			j := i
 			for j < len(str) && str[j] != '>' {
 				j++

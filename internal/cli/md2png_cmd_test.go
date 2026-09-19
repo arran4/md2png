@@ -358,3 +358,52 @@ func TestMd2pngStrict(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 }
+func TestMd2pngCLIStdoutStderr(t *testing.T) {
+	tempDir := t.TempDir()
+	inPath := filepath.Join(tempDir, "in.md")
+	if err := os.WriteFile(inPath, []byte("Hello <br>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a pipe to capture stdout and stderr if possible, or test the logic indirectly.
+	// For testing stdout separation properly, we can call Md2png to "-", capturing stdout directly
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+
+	rOut, wOut, _ := os.Pipe()
+	rErr, wErr, _ := os.Pipe()
+
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	outPath := "-"
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+
+	wOut.Close()
+	wErr.Close()
+
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	outBytes, _ := io.ReadAll(rOut)
+	errBytes, _ := io.ReadAll(rErr)
+
+	if len(outBytes) == 0 {
+		t.Errorf("Expected valid image bytes on stdout, got empty")
+	}
+	if !strings.HasPrefix(string(outBytes), "\x89PNG") {
+		t.Errorf("Expected stdout to begin with PNG magic bytes")
+	}
+
+	if !strings.Contains(string(errBytes), "md2png: [Warning] raw_html:") {
+		t.Errorf("Expected diagnostic warning on stderr, got: %q", string(errBytes))
+	}
+	if strings.Contains(string(outBytes), "md2png: [Warning]") {
+		t.Errorf("Expected stdout to remain uncontaminated by diagnostic text")
+	}
+}

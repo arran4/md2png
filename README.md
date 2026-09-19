@@ -144,6 +144,28 @@ func main() {
 
 `RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, limits (`MaxHeight`), swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
 
+### Structured Diagnostics and Safe Raw-HTML Policy
+
+When rendering documents with unresolvable resources or unsupported AST nodes, md2png adopts a "best-effort" approach by default. It degrades non-fatally and avoids rendering raw HTML markup to output text blocks (preventing injection of scripts or un-styled DOM structures).
+
+To programmatically access these rendering anomalies, `md2png` provides the `RenderWithDiagnostics` endpoint.
+
+```go
+res, err := md2png.RenderWithDiagnostics(md, md2png.RenderOptions{})
+if err != nil {
+	panic(err)
+}
+
+// Inspect diagnostic logging gracefully instead of scanning images for errors
+for _, diag := range res.Diagnostics {
+	fmt.Println(diag.String()) // "md2png: [Warning] image_load_failed: Failed to load image..."
+}
+
+img := res.Image
+```
+
+Raw HTML tags are rigorously stripped. Any `DiagRawHTML` entries generated indicate stripped elements. `<br>` translates natively to empty text/vertical gaps while script/styles are ignored entirely without triggering network evaluations.
+
 ### Security and Image Loading Policy
 
 Rendering Markdown documents containing image tags (`![alt](url)`) can initiate filesystem access (for local paths or `file://` URLs) and network requests (for `http://` or `https://` URLs).
@@ -164,7 +186,18 @@ Rendering Markdown documents containing image tags (`![alt](url)`) can initiate 
   img, err := md2png.Render(untrustedData, opts)
   ```
 
-  `StrictImagePolicy()` disables local file access (`AllowLocal: false`), sandboxes local paths to `RenderOptions.BaseDir` (`SandboxLocal: true`), disables network requests (`AllowRemote: false`), limits images to 4096×4096 px and 5 MB, and bounds cache capacity to 100 items. Any policy denial, sandbox violation, or resource limit halts rendering immediately and returns typed sentinel errors (`ErrPolicyDenied`, `ErrSandboxViolation`, `ErrResourceLimit`).
+  `StrictImagePolicy()` disables local file access (`AllowLocal: false`), sandboxes local paths to `RenderOptions.BaseDir` (`SandboxLocal: true`), disables network requests (`AllowRemote: false`), limits images to 4096×4096 px and 5 MB, and bounds cache capacity to 100 items.
+
+  By default, `StrictImagePolicy()` and other image constraints (like `ErrPolicyDenied` or `ErrSandboxViolation`) degrade non-fatally to drawing fallback text alongside a structured warning diagnostic. If you want image load failures to halt rendering immediately, you must combine it with `DiagnosticPolicy`:
+
+  ```go
+  opts := md2png.RenderOptions{
+      ImagePolicy: &policy,
+      DiagnosticPolicy: &md2png.DiagnosticPolicy{
+          FailOnImageError: true,
+      },
+  }
+  ```
 
 #### Policy Controls
 
