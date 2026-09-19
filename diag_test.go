@@ -8,18 +8,46 @@ import (
 func TestDiagnostics(t *testing.T) {
 	md := []byte("Testing <br> unsupported and missing image ![alt](missing.png)")
 
-	t.Run("Warning only render", func(t *testing.T) {
-		opts := RenderOptions{}
-		res, err := RenderWithDiagnostics(md, opts)
+	t.Run("Best-effort local/remote image failure and offsets", func(t *testing.T) {
+		// Include enough text before the image to have a non-zero, predictable offset.
+		// "1234567890" is 10 bytes. The space is 11. "![missing]" starts at index 11.
+		mdText := []byte("1234567890 ![missing](missing.png) ![malformed](data:image/png;base64,bad-data) ![denied](http://example.com/denied.png)")
+
+		opts := RenderOptions{
+			ImagePolicy: &ImagePolicy{
+				AllowLocal:  true,
+				AllowRemote: false, // will cause policy denial for the http image
+			},
+		}
+		res, err := RenderWithDiagnostics(mdText, opts)
+
 		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
+			t.Fatalf("Expected no error in best-effort mode, got %v", err)
 		}
 		if res.Image == nil {
-			t.Fatal("Expected image, got nil")
+			t.Fatal("Expected image in best-effort mode, got nil")
 		}
 
-		if len(res.Diagnostics) == 0 {
-			t.Fatal("Expected diagnostics, got none")
+		if len(res.Diagnostics) != 3 {
+			t.Fatalf("Expected 3 diagnostics, got %d: %v", len(res.Diagnostics), res.Diagnostics)
+		}
+
+		for _, diag := range res.Diagnostics {
+			if diag.Code != DiagImageLoadFailed {
+				t.Errorf("Expected DiagImageLoadFailed, got %v", diag.Code)
+			}
+			if diag.Severity != SeverityWarning {
+				t.Errorf("Expected SeverityWarning, got %v", diag.Severity)
+			}
+		}
+
+		if !strings.Contains(res.Diagnostics[0].Error.Error(), "no such file or directory") {
+			t.Errorf("Expected local missing error, got %v", res.Diagnostics[0].Error)
+		}
+
+		// The 3rd diag is the remote denied
+		if !strings.Contains(res.Diagnostics[2].Error.Error(), "denied by policy") {
+			t.Errorf("Expected policy denied error, got %v", res.Diagnostics[2].Error)
 		}
 	})
 

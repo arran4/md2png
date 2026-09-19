@@ -1018,6 +1018,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 					Severity:    SeverityWarning,
 					NodeType:    "Image",
 					Destination: dest,
+					Offset:      0, // Offset is unfortunately difficult to ascertain accurately for *ast.Image locally without a walk tracer. It will remain 0 here.
 					Message:     fmt.Sprintf("Failed to load image: %v", err),
 					Error:       err,
 				}
