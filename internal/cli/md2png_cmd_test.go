@@ -128,7 +128,7 @@ func TestMd2png_Integration(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			outPath := filepath.Join(tempDir, tc.outName)
-			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag)
+			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Md2png() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -184,7 +184,7 @@ func TestMd2png_StdoutFormats(t *testing.T) {
 		t.Run(tc.format, func(t *testing.T) {
 			outArg := "-"
 			output, err := captureStdout(t, func() error {
-				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format))
+				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil)
 			})
 			if err != nil {
 				t.Fatalf("Md2png() error = %v", err)
@@ -209,7 +209,7 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"))
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil)
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -333,12 +333,121 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 
 	outArg := "-"
 	output, err := captureStdout(t, func() error {
-		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
+		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil)
 	})
 	if err != nil {
 		t.Fatalf("Md2png() error = %v", err)
 	}
 	if !bytes.HasPrefix(output, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatal("expected PNG signature in stdout")
+	}
+}
+
+func TestMd2pngStrict(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.png")
+	inPath := filepath.Join(t.TempDir(), "in.md")
+	if err := os.WriteFile(inPath, []byte("![missing](missing.png)"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true))
+	if err == nil {
+		t.Fatal("Expected error with strict mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "Failed to load") {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+func TestMd2pngCLIStdoutStderr(t *testing.T) {
+	tempDir := t.TempDir()
+	inPath := filepath.Join(tempDir, "in.md")
+	if err := os.WriteFile(inPath, []byte("Hello <br>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a pipe to capture stdout and stderr if possible, or test the logic indirectly.
+	// For testing stdout separation properly, we can call Md2png to "-", capturing stdout directly
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+
+	rOut, wOut, _ := os.Pipe()
+	rErr, wErr, _ := os.Pipe()
+
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	outPath := "-"
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+
+	outBytes, readErrOut := io.ReadAll(rOut)
+	errBytes, readErrErr := io.ReadAll(rErr)
+
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	err := <-errChan
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if readErrOut != nil {
+		t.Fatalf("Error reading stdout pipe: %v", readErrOut)
+	}
+	if readErrErr != nil {
+		t.Fatalf("Error reading stderr pipe: %v", readErrErr)
+	}
+
+	if len(outBytes) == 0 {
+		t.Errorf("Expected valid image bytes on stdout, got empty")
+	}
+	if !strings.HasPrefix(string(outBytes), "\x89PNG") {
+		t.Errorf("Expected stdout to begin with PNG magic bytes")
+	}
+
+	if !strings.Contains(string(errBytes), "md2png: [Warning] raw_html:") {
+		t.Errorf("Expected diagnostic warning on stderr, got: %q", string(errBytes))
+	}
+	if strings.Contains(string(outBytes), "md2png: [Warning]") {
+		t.Errorf("Expected stdout to remain uncontaminated by diagnostic text")
+	}
+
+	// Test strict mode failure produces no output on stdout and error on stderr
+	oldStdout = os.Stdout
+	oldStderr = os.Stderr
+
+	rOut, wOut, _ = os.Pipe()
+	rErr, wErr, _ = os.Pipe()
+
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	errChan2 := make(chan error, 1)
+	go func() {
+		errChan2 <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+
+	outBytesStrict, _ := io.ReadAll(rOut)
+	errBytesStrict, _ := io.ReadAll(rErr)
+
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	errStrict := <-errChan2
+	if errStrict == nil {
+		t.Fatalf("Expected error in strict mode")
+	}
+
+	if len(outBytesStrict) != 0 {
+		t.Errorf("Expected strict failure to not write any output to stdout")
+	}
+	if !strings.Contains(string(errBytesStrict), "md2png: [Error] raw_html:") {
+		t.Errorf("Expected diagnostic error on stderr during strict failure, got: %q", string(errBytesStrict))
 	}
 }

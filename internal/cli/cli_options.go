@@ -7,6 +7,7 @@ import (
 // ConvertCommandArgsToRenderOptions tests the logic for mapping pointer arguments
 // from go-subcommand into a md2png.RenderOptions struct, exactly as Md2png/Md2view do.
 func ConvertCommandArgsToRenderOptions(
+	strict *bool,
 	width *int,
 	margin *int,
 	pt *float64,
@@ -48,11 +49,20 @@ func ConvertCommandArgsToRenderOptions(
 	}
 
 	policy := md2png.DefaultCLIImagePolicy()
+
+	diagPolicy := md2png.DiagnosticPolicy{}
+	if strict != nil && *strict {
+		diagPolicy.FailOnImageError = true
+		diagPolicy.FailOnRawHTML = true
+		diagPolicy.FailOnUnsupported = true
+	}
+
 	opts := md2png.RenderOptions{
-		Theme:       th,
-		Fonts:       fonts,
-		BaseDir:     baseDir,
-		ImagePolicy: &policy,
+		Theme:            th,
+		Fonts:            fonts,
+		BaseDir:          baseDir,
+		ImagePolicy:      &policy,
+		DiagnosticPolicy: &diagPolicy,
 	}
 
 	if width != nil {
