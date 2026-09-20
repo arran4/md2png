@@ -86,6 +86,7 @@ type RootCmd struct {
 	footnoteImages *bool
 	maxHeight      *int
 	format         *string
+	strict         *bool
 	CommandAction  func(c *RootCmd) error
 }
 
@@ -213,9 +214,19 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.BoolFunc("strict", "flag: Enable strict rendering (fail on warnings)", func(s string) error {
+		parsed, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.strict = &val
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format)
+		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -468,6 +479,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				s := value
 				c.format = &s
+
+			case "strict":
+				if hasValue {
+					b, err := strconv.ParseBool(value)
+					if err != nil {
+						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+					}
+					c.strict = &b
+				} else {
+					b := true
+					c.strict = &b
+				}
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)
 			}

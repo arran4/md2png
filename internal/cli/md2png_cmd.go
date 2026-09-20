@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"github.com/arran4/md2png"
 
 	"io"
@@ -23,6 +24,7 @@ func Md2png(
 	footnoteImages *bool, // flag: --footnote-images Add footnotes for image destinations (default: false)
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
 	format *string, // flag: --format Output format: png, jpeg, or gif
+	strict *bool, // flag: --strict Enable strict rendering (fail on warnings)
 ) error {
 	var data []byte
 	var baseDir string
@@ -63,15 +65,24 @@ func Md2png(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, baseDir)
 	if err != nil {
 		return err
 	}
 
-	img, err := md2png.Render(data, opts)
+	res, err := md2png.RenderWithDiagnostics(data, opts)
+
+	if len(res.Diagnostics) > 0 {
+		for _, diag := range res.Diagnostics {
+			fmt.Fprintf(os.Stderr, "md2png: %s\n", diag.String())
+		}
+	}
+
 	if err != nil {
 		return err
 	}
+
+	img := res.Image
 
 	if outPath == "-" {
 		return encodeImage(os.Stdout, img, resolvedFormat)

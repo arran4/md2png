@@ -75,7 +75,7 @@ func Md2view(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, baseDir)
 	if err != nil {
 		return err
 	}

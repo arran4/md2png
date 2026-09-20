@@ -22,3 +22,4 @@ Flags:
     --footnote-images *bool   (default: false)     flag: Add footnotes for image destinations
     --max-height *int         (default: false)     flag: Maximum output height in pixels (0 for default)
     --format *string                               flag: Output format: png, jpeg, or gif
+    --strict *bool                                 flag: Enable strict rendering (fail on warnings)

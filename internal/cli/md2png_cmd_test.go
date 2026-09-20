@@ -128,7 +128,7 @@ func TestMd2png_Integration(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			outPath := filepath.Join(tempDir, tc.outName)
-			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag)
+			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Md2png() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -184,7 +184,7 @@ func TestMd2png_StdoutFormats(t *testing.T) {
 		t.Run(tc.format, func(t *testing.T) {
 			outArg := "-"
 			output, err := captureStdout(t, func() error {
-				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format))
+				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil)
 			})
 			if err != nil {
 				t.Fatalf("Md2png() error = %v", err)
@@ -209,7 +209,7 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"))
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil)
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -333,7 +333,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 
 	outArg := "-"
 	output, err := captureStdout(t, func() error {
-		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"))
+		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil)
 	})
 	if err != nil {
 		t.Fatalf("Md2png() error = %v", err)
@@ -341,4 +341,112 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 	if !bytes.HasPrefix(output, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatal("expected PNG signature in stdout")
 	}
+}
+
+func TestMd2pngStrict(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.png")
+	inPath := filepath.Join(t.TempDir(), "in.md")
+	if err := os.WriteFile(inPath, []byte("![missing](missing.png)"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true))
+	if err == nil {
+		t.Fatal("Expected error with strict mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "Failed to load") {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+func TestMd2pngCLIStdoutStderr(t *testing.T) {
+	tempDir := t.TempDir()
+	inPath := filepath.Join(tempDir, "in.md")
+	if err := os.WriteFile(inPath, []byte("Hello <br>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outPath := "-"
+	outBytes, errBytes, err := captureStdoutStderr(t, func() error {
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+	})
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if _, _, err := image.Decode(bytes.NewReader(outBytes)); err != nil {
+		t.Fatalf("stdout did not contain a decodable image: %v", err)
+	}
+
+	if !strings.Contains(string(errBytes), "md2png: [Warning] raw_html:") {
+		t.Errorf("Expected diagnostic warning on stderr, got: %q", string(errBytes))
+	}
+	if strings.Contains(string(outBytes), "md2png: [Warning]") {
+		t.Errorf("Expected stdout to remain uncontaminated by diagnostic text")
+	}
+
+	// Strict failure produces no stdout image but retains a diagnostic on stderr.
+	outBytesStrict, errBytesStrict, errStrict := captureStdoutStderr(t, func() error {
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+	})
+	if errStrict == nil {
+		t.Fatalf("Expected error in strict mode")
+	}
+
+	if len(outBytesStrict) != 0 {
+		t.Errorf("Expected strict failure to not write any output to stdout")
+	}
+	if !strings.Contains(string(errBytesStrict), "md2png: [Error] raw_html:") {
+		t.Errorf("Expected diagnostic error on stderr during strict failure, got: %q", string(errBytesStrict))
+	}
+}
+
+// captureStdoutStderr drains both pipes concurrently so either stream can grow
+// without blocking the render goroutine. It also restores process globals and
+// closes every descriptor before returning on success or failure.
+func captureStdoutStderr(t *testing.T, fn func() error) ([]byte, []byte, error) {
+	t.Helper()
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		_ = rOut.Close()
+		_ = wOut.Close()
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Stdout, os.Stderr = oldStdout, oldStderr
+		_ = rOut.Close()
+		_ = rErr.Close()
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+	os.Stdout, os.Stderr = wOut, wErr
+
+	type stream struct {
+		data []byte
+		err  error
+	}
+	outDone := make(chan stream, 1)
+	errDone := make(chan stream, 1)
+	go func() { data, err := io.ReadAll(rOut); outDone <- stream{data, err} }()
+	go func() { data, err := io.ReadAll(rErr); errDone <- stream{data, err} }()
+	renderDone := make(chan error, 1)
+	go func() {
+		err := fn()
+		_ = wOut.Close()
+		_ = wErr.Close()
+		renderDone <- err
+	}()
+
+	renderErr := <-renderDone
+	out, stderr := <-outDone, <-errDone
+	if out.err != nil {
+		t.Fatalf("read captured stdout: %v", out.err)
+	}
+	if stderr.err != nil {
+		t.Fatalf("read captured stderr: %v", stderr.err)
+	}
+	return out.data, stderr.data, renderErr
 }

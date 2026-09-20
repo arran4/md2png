@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"image"
 	"image/color"
 	"image/draw"
@@ -520,7 +521,10 @@ type renderer struct {
 	imageResolvers map[string]imageResolver
 	httpClient     *http.Client
 	imagePolicy    ImagePolicy
+	diagPolicy     DiagnosticPolicy
+	diagnostics    []Diagnostic
 	renderErr      error
+	htmlState      htmlExtractionState
 }
 
 type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
@@ -963,6 +967,11 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch c := child.(type) {
 		case *ast.Text:
+			// Goldmark represents inline script/style bodies as Text nodes between
+			// separate opening and closing RawHTML nodes.
+			if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
+				continue
+			}
 			text := string(c.Segment.Value(md))
 			if text != "" {
 				parts := strings.Split(text, "\n")
@@ -1010,16 +1019,31 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if img, err := r.loadImage(dest); err == nil {
 				*out = append(*out, textToken{image: img, center: true})
 			} else {
-				if errors.Is(err, context.DeadlineExceeded) ||
-					errors.Is(err, context.Canceled) ||
-					errors.Is(err, ErrPolicyDenied) ||
-					errors.Is(err, ErrResourceLimit) ||
-					errors.Is(err, ErrSandboxViolation) {
+				diag := Diagnostic{
+					Code:        DiagImageLoadFailed,
+					Severity:    SeverityWarning,
+					NodeType:    "Image",
+					Destination: dest,
+					// Goldmark's Image node has no reliable source segment. -1 means
+					// unavailable; zero remains a valid source byte offset.
+					Offset:  -1,
+					Message: fmt.Sprintf("Failed to load image: %v", err),
+					Error:   err,
+				}
+
+				if r.diagPolicy.FailOnImageError ||
+					errors.Is(err, context.DeadlineExceeded) ||
+					errors.Is(err, context.Canceled) {
+
+					diag.Severity = SeverityError
+					r.addDiagnostic(diag)
 					if r.renderErr == nil {
 						r.renderErr = err
 					}
 					return
 				}
+
+				r.addDiagnostic(diag)
 				fallback := alt
 				fallbackColor := r.c.th.FG
 				if fallback == "" {
@@ -1053,6 +1077,42 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			txt := getNodeText(c, md)
 			if txt != "" {
 				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
+			}
+		case *ast.RawHTML:
+			offset := 0
+			if c.Segments.Len() > 0 {
+				offset = c.Segments.At(0).Start
+			}
+			diag := Diagnostic{
+				Code:     DiagRawHTML,
+				Severity: SeverityWarning,
+				NodeType: "RawHTML",
+				Offset:   offset,
+				Message:  "Raw HTML is intentionally stripped/degraded: RawHTML",
+			}
+			if r.diagPolicy.FailOnRawHTML {
+				diag.Severity = SeverityError
+				r.addDiagnostic(diag)
+				if r.renderErr == nil {
+					r.renderErr = fmt.Errorf("md2png: %s", diag.Message)
+				}
+				return
+			}
+			r.addDiagnostic(diag)
+
+			htmlContent := ""
+			segments := c.Segments
+			for i := 0; i < segments.Len(); i++ {
+				seg := segments.At(i)
+				htmlContent += string(seg.Value(md))
+			}
+			parts := extractHTMLText([]byte(htmlContent), &r.htmlState)
+			for _, part := range parts {
+				if part == "\n" {
+					*out = append(*out, textToken{newline: true})
+				} else if part != "" {
+					*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+				}
 			}
 		default:
 			if child.HasChildren() {
@@ -1529,14 +1589,148 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	r.c.cursorY = tableBottom + int(r.baseSize*0.7)
 }
 
+func (r *renderer) addDiagnostic(d Diagnostic) {
+	if d.Severity != SeverityError {
+		if r.diagPolicy.IgnoreCodes != nil && r.diagPolicy.IgnoreCodes[d.Code] {
+			return
+		}
+	}
+	r.diagnostics = append(r.diagnostics, d)
+}
+
+// htmlExtractionState carries stripping state across Goldmark AST nodes. In
+// particular, inline <script>body</script> is represented as RawHTML, Text,
+// RawHTML rather than one complete string.
+type htmlExtractionState struct {
+	suppressedTag string
+	inComment     bool
+}
+
+func (r *renderer) safeExtractHTMLText(input []byte) []string {
+	state := htmlExtractionState{}
+	return extractHTMLText(input, &state)
+}
+
+func extractHTMLText(input []byte, state *htmlExtractionState) []string {
+	var result []string
+	var current strings.Builder
+
+	i := 0
+	str := string(input)
+
+	for i < len(str) {
+		if state.inComment {
+			end := strings.Index(str[i:], "-->")
+			if end < 0 {
+				break
+			}
+			state.inComment = false
+			i += end + len("-->")
+			continue
+		}
+		if state.suppressedTag != "" {
+			start := strings.IndexByte(str[i:], '<')
+			if start < 0 {
+				break
+			}
+			i += start
+			name, closing, end, ok := htmlTagAt(str, i)
+			if ok {
+				if closing && name == state.suppressedTag {
+					state.suppressedTag = ""
+				}
+				i = end
+				continue
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(str[i:], "<!--") {
+			state.inComment = true
+			i += len("<!--")
+			continue
+		}
+		if str[i] == '<' {
+			name, closing, end, ok := htmlTagAt(str, i)
+			if ok {
+				if !closing && (name == "script" || name == "style") {
+					state.suppressedTag = name
+				} else if !closing && name == "br" {
+					if current.Len() > 0 {
+						result = append(result, html.UnescapeString(current.String()))
+						current.Reset()
+					}
+					result = append(result, "\n")
+				}
+				i = end
+				continue
+			}
+		}
+		current.WriteByte(str[i])
+		i++
+	}
+
+	if current.Len() > 0 {
+		result = append(result, html.UnescapeString(current.String()))
+	}
+
+	return result
+}
+
+// htmlTagAt recognises only the minimal tag syntax required by the stripping
+// policy. It is deliberately not an HTML parser.
+func htmlTagAt(s string, start int) (name string, closing bool, end int, ok bool) {
+	if start >= len(s) || s[start] != '<' {
+		return "", false, start, false
+	}
+	end = strings.IndexByte(s[start:], '>')
+	if end < 0 {
+		return "", false, start, false
+	}
+	end += start + 1
+	i := start + 1
+	if i < len(s) && s[i] == '/' {
+		closing = true
+		i++
+	}
+	for i < end && unicode.IsSpace(rune(s[i])) {
+		i++
+	}
+	begin := i
+	for i < end && (unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i]))) {
+		i++
+	}
+	if begin == i {
+		return "", false, start, false
+	}
+	return strings.ToLower(s[begin:i]), closing, end, true
+}
+
 func (r *renderer) renderUnsupported(node ast.Node) {
-	if node.Type() != ast.TypeBlock {
+	offset := -1
+	if node.Lines().Len() > 0 {
+		offset = node.Lines().At(0).Start
+	}
+
+	d := Diagnostic{
+		Code:     DiagUnsupportedNode,
+		Severity: SeverityWarning,
+		NodeType: node.Kind().String(),
+		Offset:   offset,
+		Message:  fmt.Sprintf("Unsupported node type: %s", node.Kind().String()),
+	}
+
+	if r.diagPolicy.FailOnUnsupported {
+		d.Severity = SeverityError
+		r.addDiagnostic(d)
+		if r.renderErr == nil {
+			r.renderErr = fmt.Errorf("md2png: %s", d.Message)
+		}
 		return
 	}
-	msg := fmt.Sprintf("⚠ Unsupported: %s", node.Kind().String())
-	tokens := []textToken{{text: msg, font: r.c.fonts.Regular, size: r.baseSize * 0.9, color: warningColor}}
-	_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
-	r.c.addVSpace(int(r.baseSize * 0.6))
+
+	r.addDiagnostic(d)
+	// We no longer embed the warning visually.
 }
 
 func (r *renderer) drawFootnotes() {
@@ -1561,6 +1755,12 @@ func (r *renderer) render(md []byte) error {
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(md))
+	return r.renderDocument(md, doc)
+}
+
+// renderDocument contains the shared AST traversal. Keeping it separate from
+// parsing lets tests verify diagnostics for real traversal nodes.
+func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 	if err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if r.renderErr != nil {
 			return ast.WalkStop, r.renderErr
@@ -1641,6 +1841,69 @@ func (r *renderer) render(md []byte) error {
 		case *ast.Text:
 			// Handled by parents (Paragraph/List/Heading)
 			return ast.WalkContinue, nil
+		case *ast.RawHTML, *ast.HTMLBlock:
+			offset := 0
+			if htmlBlock, ok := nd.(*ast.HTMLBlock); ok && htmlBlock.Lines().Len() > 0 {
+				offset = htmlBlock.Lines().At(0).Start
+			} else if rawHTML, ok := nd.(*ast.RawHTML); ok && rawHTML.Segments.Len() > 0 {
+				offset = rawHTML.Segments.At(0).Start
+			}
+			diag := Diagnostic{
+				Code:     DiagRawHTML,
+				Severity: SeverityWarning,
+				NodeType: nd.Kind().String(),
+				Offset:   offset,
+				Message:  fmt.Sprintf("Raw HTML is intentionally stripped/degraded: %s", nd.Kind().String()),
+			}
+			if r.diagPolicy.FailOnRawHTML {
+				diag.Severity = SeverityError
+				r.addDiagnostic(diag)
+				if r.renderErr == nil {
+					r.renderErr = fmt.Errorf("md2png: %s", diag.Message)
+				}
+				return ast.WalkStop, r.renderErr
+			}
+			r.addDiagnostic(diag)
+
+			// We skip children of RawHTML/HTMLBlock because we're rendering it manually or skipping it
+			htmlContent := ""
+			if htmlBlock, ok := nd.(*ast.HTMLBlock); ok {
+				lines := htmlBlock.Lines()
+				for i := 0; i < lines.Len(); i++ {
+					seg := lines.At(i)
+					htmlContent += string(seg.Value(md))
+				}
+			} else if rawHTML, ok := nd.(*ast.RawHTML); ok {
+				segments := rawHTML.Segments
+				for i := 0; i < segments.Len(); i++ {
+					seg := segments.At(i)
+					htmlContent += string(seg.Value(md))
+				}
+			}
+
+			parts := extractHTMLText([]byte(htmlContent), &r.htmlState)
+			var tokens []textToken
+
+			for _, part := range parts {
+				if part == "\n" {
+					if len(tokens) > 0 {
+						_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+						tokens = nil
+						r.c.addVSpace(int(r.baseSize * 0.9))
+					}
+				} else if part != "" {
+					tokens = append(tokens, textToken{text: part, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG})
+				}
+			}
+
+			if len(tokens) > 0 {
+				if nd.Type() == ast.TypeBlock {
+					_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+					r.c.addVSpace(int(r.baseSize * 0.9))
+				}
+			}
+
+			return ast.WalkSkipChildren, nil
 		default:
 			switch nd.(type) {
 			case *ast.Document, *ast.ListItem:
@@ -1741,84 +2004,144 @@ func DefaultCLIImagePolicy() ImagePolicy {
 // Zero values (or empty structs) will automatically populate with sensible defaults,
 // including a 1024px width, 48px margin, 16pt font, and a 32768px height limit.
 type RenderOptions struct {
-	Width          int          // Overall image width in pixels. Default is 1024, max is 32768.
-	Margin         int          // Border margin in pixels. Default is 48.
-	ZeroMargin     bool         // If true, intentionally use a 0 margin instead of the default.
-	BaseFontSize   float64      // Base font size in points. Default is 16, max is 1024.
-	Theme          Theme        // Color theme. Defaults to light theme.
-	Fonts          Fonts        // Font configuration. Defaults to bundled Go fonts.
-	LinkFootnotes  *bool        // Add footnotes for links. Defaults to true.
-	ImageFootnotes *bool        // Add footnotes for images. Defaults to false.
-	BaseDir        string       // Base directory for resolving local image paths.
-	MaxHeight      int          // Maximum permitted output height (default 32768) to prevent OOM.
-	ImagePolicy    *ImagePolicy // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
+	Width            int               // Overall image width in pixels. Default is 1024, max is 32768.
+	Margin           int               // Border margin in pixels. Default is 48.
+	ZeroMargin       bool              // If true, intentionally use a 0 margin instead of the default.
+	BaseFontSize     float64           // Base font size in points. Default is 16, max is 1024.
+	Theme            Theme             // Color theme. Defaults to light theme.
+	Fonts            Fonts             // Font configuration. Defaults to bundled Go fonts.
+	LinkFootnotes    *bool             // Add footnotes for links. Defaults to true.
+	ImageFootnotes   *bool             // Add footnotes for images. Defaults to false.
+	BaseDir          string            // Base directory for resolving local image paths.
+	MaxHeight        int               // Maximum permitted output height (default 32768) to prevent OOM.
+	ImagePolicy      *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
+	DiagnosticPolicy *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
 }
 
-// Render converts the provided Markdown document into a raster image using the
-// supplied options. Zero values enable sensible defaults (1024px width,
-// 48px margin, 16pt base font, light theme, 32768px max height, bundled fonts).
-// Dimensions that are negative, excessively large (width > 32768, font > 1024),
-// or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
-func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
-				resErr = err
-			} else {
-				panic(r)
-			}
-		}
-	}()
+// DiagnosticSeverity indicates the severity of a rendering issue.
+type DiagnosticSeverity int
 
+const (
+	// SeverityWarning indicates a degraded or best-effort output.
+	SeverityWarning DiagnosticSeverity = iota
+	// SeverityError indicates a fatal rendering error.
+	SeverityError
+)
+
+func (s DiagnosticSeverity) String() string {
+	switch s {
+	case SeverityWarning:
+		return "Warning"
+	case SeverityError:
+		return "Error"
+	default:
+		return "Unknown"
+	}
+}
+
+// DiagnosticCode provides a stable machine-readable identifier for rendering issues.
+type DiagnosticCode string
+
+const (
+	// DiagUnsupportedNode is reported when an AST node is not supported by the renderer.
+	DiagUnsupportedNode DiagnosticCode = "unsupported_node"
+	// DiagImageLoadFailed is reported when an image fails to load or violates policy.
+	DiagImageLoadFailed DiagnosticCode = "image_load_failed"
+	// DiagRawHTML is reported when raw HTML is encountered and its visual fidelity is degraded.
+	DiagRawHTML DiagnosticCode = "raw_html"
+)
+
+// Diagnostic provides stable information about degraded rendering output.
+type Diagnostic struct {
+	Code        DiagnosticCode
+	Severity    DiagnosticSeverity
+	NodeType    string // Name of the AST node kind (if applicable)
+	Destination string // Target URI/path (if applicable, e.g. for image)
+	Message     string // Human-readable detail
+	Error       error  // Underlying cause, if applicable
+	// Offset is a zero-based source byte offset when available. It is -1 when
+	// the Goldmark node does not expose a reliable location; zero is valid.
+	Offset int
+}
+
+func (d Diagnostic) String() string {
+	msg := fmt.Sprintf("[%s] %s: %s", d.Severity.String(), d.Code, d.Message)
+	if d.NodeType != "" {
+		msg += fmt.Sprintf(" (node: %s)", d.NodeType)
+	}
+	if d.Destination != "" {
+		msg += fmt.Sprintf(" (dest: %s)", d.Destination)
+	}
+	if d.Offset >= 0 {
+		msg += fmt.Sprintf(" at offset %d", d.Offset)
+	}
+	return msg
+}
+
+// DiagnosticPolicy controls how the renderer responds to degraded output conditions.
+type DiagnosticPolicy struct {
+	FailOnUnsupported bool                    // Treat unsupported nodes as fatal errors
+	FailOnImageError  bool                    // Treat image load failures as fatal errors
+	FailOnRawHTML     bool                    // Treat raw HTML as a fatal error
+	IgnoreCodes       map[DiagnosticCode]bool // Set of codes to suppress entirely
+}
+
+// RenderResult contains the rendered image and any diagnostics produced during rendering.
+type RenderResult struct {
+	Image       *image.RGBA
+	Diagnostics []Diagnostic
+}
+
+func normalizeRenderOptions(opts *RenderOptions) error {
 	if opts.Width < 0 {
-		return nil, ErrInvalidWidth
+		return ErrInvalidWidth
 	}
 	if opts.Width == 0 {
 		opts.Width = 1024
 	}
 	if opts.Width > MaxAllowedWidth {
-		return nil, ErrResourceLimit
+		return ErrResourceLimit
 	}
 
 	if opts.Margin < 0 {
-		return nil, ErrInvalidMargin
+		return ErrInvalidMargin
 	}
 	if opts.Margin == 0 && !opts.ZeroMargin {
 		opts.Margin = 48
 	}
 
 	if opts.Margin >= (opts.Width+1)/2 {
-		return nil, ErrNoDrawableWidth
+		return ErrNoDrawableWidth
 	}
 
 	if opts.BaseFontSize < 0 || math.IsNaN(opts.BaseFontSize) {
-		return nil, ErrInvalidFontSize
+		return ErrInvalidFontSize
 	}
 	if opts.BaseFontSize == 0 {
 		opts.BaseFontSize = 16
 	}
 	if opts.BaseFontSize > MaxAllowedFontSize {
-		return nil, ErrResourceLimit
+		return ErrResourceLimit
 	}
 
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
 	}
 	if opts.MaxHeight < 0 {
-		return nil, ErrInvalidMaxHeight
+		return ErrInvalidMaxHeight
 	}
 	if opts.MaxHeight == 0 {
 		opts.MaxHeight = 32768
 	}
 	if opts.MaxHeight > MaxAllowedHeight {
-		return nil, ErrResourceLimit
+		return ErrResourceLimit
 	}
 
 	// Fill in missing fonts using the bundled defaults.
 	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
 		fallback, err := LoadFonts(FontConfig{SizeBase: opts.BaseFontSize})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if opts.Fonts.Regular == nil {
 			opts.Fonts.Regular = fallback.Regular
@@ -1832,16 +2155,16 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 	}
 
 	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
-		return nil, errors.New("md2png: incomplete font configuration")
+		return errors.New("md2png: incomplete font configuration")
 	}
 
-	linkFootnotes := true
-	if opts.LinkFootnotes != nil {
-		linkFootnotes = *opts.LinkFootnotes
+	if opts.LinkFootnotes == nil {
+		t := true
+		opts.LinkFootnotes = &t
 	}
-	imageFootnotes := false
-	if opts.ImageFootnotes != nil {
-		imageFootnotes = *opts.ImageFootnotes
+	if opts.ImageFootnotes == nil {
+		f := false
+		opts.ImageFootnotes = &f
 	}
 
 	baseDir := strings.TrimSpace(opts.BaseDir)
@@ -1854,24 +2177,51 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 			baseDir = abs
 		}
 	}
+	opts.BaseDir = baseDir
+
+	if opts.ImagePolicy == nil {
+		policy := DefaultCLIImagePolicy()
+		opts.ImagePolicy = &policy
+	}
+	if opts.DiagnosticPolicy == nil {
+		diagPolicy := DiagnosticPolicy{}
+		opts.DiagnosticPolicy = &diagPolicy
+	}
+
+	return nil
+}
+
+// RenderWithDiagnostics converts the provided Markdown document into a raster image using the
+// supplied options, returning both the result image and structured diagnostics.
+func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, resErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
+				resErr = err
+			} else {
+				panic(r)
+			}
+		}
+	}()
+
+	if err := normalizeRenderOptions(&opts); err != nil {
+		return RenderResult{}, err
+	}
 
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
-	policy := DefaultCLIImagePolicy()
-	if opts.ImagePolicy != nil {
-		policy = *opts.ImagePolicy
-	}
 
 	r := &renderer{
 		c:              c,
 		baseSize:       opts.BaseFontSize,
-		linkFootnotes:  linkFootnotes,
-		imageFootnotes: imageFootnotes,
-		baseDir:        baseDir,
-		imagePolicy:    policy,
+		linkFootnotes:  *opts.LinkFootnotes,
+		imageFootnotes: *opts.ImageFootnotes,
+		baseDir:        opts.BaseDir,
+		imagePolicy:    *opts.ImagePolicy,
+		diagPolicy:     *opts.DiagnosticPolicy,
 	}
 	r.ensureImageResolvers()
 	if err := r.render(data); err != nil {
-		return nil, err
+		return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
 	}
 
 	used := c.cursorY + opts.Margin
@@ -1883,5 +2233,15 @@ func Render(data []byte, opts RenderOptions) (resImg *image.RGBA, resErr error) 
 
 	img := image.NewRGBA(image.Rect(0, 0, opts.Width, used))
 	draw.Draw(img, img.Bounds(), c.img, image.Point{}, draw.Src)
-	return img, nil
+	return RenderResult{Image: img, Diagnostics: r.diagnostics}, nil
+}
+
+// Render converts the provided Markdown document into a raster image using the
+// supplied options. Zero values enable sensible defaults (1024px width,
+// 48px margin, 16pt base font, light theme, 32768px max height, bundled fonts).
+// Dimensions that are negative, excessively large (width > 32768, font > 1024),
+// or result in no useful drawable area (width <= 2*margin) will return sentinel errors.
+func Render(data []byte, opts RenderOptions) (*image.RGBA, error) {
+	res, err := RenderWithDiagnostics(data, opts)
+	return res.Image, err
 }

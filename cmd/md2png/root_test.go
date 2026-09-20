@@ -43,6 +43,7 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "1")
 	args = append(args, "--format")
 	args = append(args, "test")
+	args = append(args, "--strict")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -116,6 +117,11 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected format to be non-nil")
 	} else if *cmd.format != "test" {
 		t.Errorf("Expected format to be 'test', got '%v'", *cmd.format)
+	}
+	if cmd.strict == nil {
+		t.Errorf("Expected strict to be non-nil")
+	} else if *cmd.strict != true {
+		t.Errorf("Expected strict to be true, got '%v'", *cmd.strict)
 	}
 
 }

@@ -45,7 +45,7 @@ func TestPolicy_LocalImagesDisabled(t *testing.T) {
 	imgPath := filepath.Join(dir, "local.png")
 	writeTestImage(t, imgPath, 20, 20)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: dir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal: false,
@@ -61,7 +61,7 @@ func TestPolicy_LocalImagesDisabled(t *testing.T) {
 }
 
 func TestPolicy_RemoteImagesDisabled(t *testing.T) {
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: false,
 		},
@@ -81,7 +81,7 @@ func TestPolicy_SandboxTraversalEscapeRejected(t *testing.T) {
 	outsideFile := filepath.Join(outsideDir, "secret.png")
 	writeTestImage(t, outsideFile, 20, 20)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: baseDir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:   true,
@@ -109,7 +109,7 @@ func TestPolicy_SandboxTraversalEscapeRejected(t *testing.T) {
 
 func TestPolicy_SandboxAbsoluteLocalPathRejected(t *testing.T) {
 	baseDir := t.TempDir()
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: baseDir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:   true,
@@ -135,7 +135,7 @@ func TestPolicy_SandboxAbsoluteLocalPathRejected(t *testing.T) {
 
 func TestPolicy_SandboxFileURIBypassRejected(t *testing.T) {
 	baseDir := t.TempDir()
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: baseDir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:   true,
@@ -172,7 +172,7 @@ func TestPolicy_SandboxSymlinkEscapeRejected(t *testing.T) {
 		t.Skipf("skipping symlink test (symlinks not supported): %v", err)
 	}
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: baseDir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -197,7 +197,7 @@ func TestPolicy_ValidFileInsideBaseDir(t *testing.T) {
 	imgPath := filepath.Join(baseDir, "images", "valid.png")
 	writeTestImage(t, imgPath, 20, 20)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: baseDir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -230,7 +230,7 @@ func TestPolicy_RemoteRequestUsingSuppliedHTTPClient(t *testing.T) {
 
 	customClient := server.Client()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     customClient,
@@ -259,7 +259,7 @@ func TestPolicy_RedirectToDisallowedDestinationRejected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     server.Client(),
@@ -286,7 +286,7 @@ func TestPolicy_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel before rendering
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  server.Client(),
@@ -314,7 +314,7 @@ func TestPolicy_ContextDeadlineTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  server.Client(),
@@ -339,7 +339,7 @@ func TestPolicy_ResponseBodyExceedingMaxRemoteBytes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     server.Client(),
@@ -361,7 +361,7 @@ func TestPolicy_ExcessiveWidth(t *testing.T) {
 	imgPath := filepath.Join(dir, "wide.png")
 	writeTestImage(t, imgPath, 200, 20)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: dir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -385,7 +385,7 @@ func TestPolicy_ExcessiveHeight(t *testing.T) {
 	imgPath := filepath.Join(dir, "tall.png")
 	writeTestImage(t, imgPath, 20, 200)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: dir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -409,7 +409,7 @@ func TestPolicy_ExcessiveTotalPixels(t *testing.T) {
 	imgPath := filepath.Join(dir, "square.png")
 	writeTestImage(t, imgPath, 100, 100) // 10,000 pixels
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: dir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -433,7 +433,7 @@ func TestPolicy_NormalLocalImageBelowLimits(t *testing.T) {
 	imgPath := filepath.Join(dir, "normal.png")
 	writeTestImage(t, imgPath, 50, 50)
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		BaseDir: dir,
 		ImagePolicy: &ImagePolicy{
 			AllowLocal:     true,
@@ -461,7 +461,7 @@ func TestPolicy_NormalRemoteImageBelowLimits(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     server.Client(),
@@ -564,7 +564,7 @@ func TestPolicy_StrictImagePolicy(t *testing.T) {
 		t.Errorf("StrictImagePolicy should have SandboxLocal = true")
 	}
 
-	opts := RenderOptions{ImagePolicy: &strict}
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true}, ImagePolicy: &strict}
 	_, err := Render([]byte("![local](foo.png)"), opts)
 	if !errors.Is(err, ErrPolicyDenied) {
 		t.Fatalf("expected ErrPolicyDenied for local image under strict policy, got: %v", err)
@@ -596,7 +596,7 @@ func TestPolicy_CallerSuppliedCheckRedirectPreserved(t *testing.T) {
 		return errCustomRedirect
 	}
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  customClient,
@@ -637,7 +637,7 @@ func TestPolicy_CallerSuppliedCheckRedirectErrUseLastResponse(t *testing.T) {
 		return http.ErrUseLastResponse
 	}
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: false},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  customClient,
@@ -666,7 +666,7 @@ func TestPolicy_RedirectCountExceededFails(t *testing.T) {
 	defer server.Close()
 
 	// Default client
-	optsDefault := RenderOptions{
+	optsDefault := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 		},
@@ -680,7 +680,7 @@ func TestPolicy_RedirectCountExceededFails(t *testing.T) {
 	}
 
 	// Caller-supplied client
-	optsCustom := RenderOptions{
+	optsCustom := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  server.Client(),
@@ -701,7 +701,7 @@ func TestPolicy_CallerHTTPClientNotMutated(t *testing.T) {
 	}
 	origCheckRedirect := origClient.CheckRedirect
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote: true,
 			HTTPClient:  origClient,
@@ -735,7 +735,7 @@ func TestPolicy_ChunkedResponseExceedingMaxRemoteBytes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     server.Client(),
@@ -760,7 +760,7 @@ func TestPolicy_RemoteImageExcessiveDimensions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := RenderOptions{
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnImageError: true},
 		ImagePolicy: &ImagePolicy{
 			AllowRemote:    true,
 			HTTPClient:     server.Client(),
