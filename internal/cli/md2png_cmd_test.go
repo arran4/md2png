@@ -365,48 +365,15 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a pipe to capture stdout and stderr if possible, or test the logic indirectly.
-	// For testing stdout separation properly, we can call Md2png to "-", capturing stdout directly
-
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-
-	rOut, wOut, _ := os.Pipe()
-	rErr, wErr, _ := os.Pipe()
-
-	os.Stdout = wOut
-	os.Stderr = wErr
-
 	outPath := "-"
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
-		_ = wOut.Close()
-		_ = wErr.Close()
-	}()
-
-	outBytes, readErrOut := io.ReadAll(rOut)
-	errBytes, readErrErr := io.ReadAll(rErr)
-
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-
-	err := <-errChan
+	outBytes, errBytes, err := captureStdoutStderr(t, func() error {
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+	})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if readErrOut != nil {
-		t.Fatalf("Error reading stdout pipe: %v", readErrOut)
-	}
-	if readErrErr != nil {
-		t.Fatalf("Error reading stderr pipe: %v", readErrErr)
-	}
-
-	if len(outBytes) == 0 {
-		t.Errorf("Expected valid image bytes on stdout, got empty")
-	}
-	if !strings.HasPrefix(string(outBytes), "\x89PNG") {
-		t.Errorf("Expected stdout to begin with PNG magic bytes")
+	if _, _, err := image.Decode(bytes.NewReader(outBytes)); err != nil {
+		t.Fatalf("stdout did not contain a decodable image: %v", err)
 	}
 
 	if !strings.Contains(string(errBytes), "md2png: [Warning] raw_html:") {
@@ -416,30 +383,10 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 		t.Errorf("Expected stdout to remain uncontaminated by diagnostic text")
 	}
 
-	// Test strict mode failure produces no output on stdout and error on stderr
-	oldStdout = os.Stdout
-	oldStderr = os.Stderr
-
-	rOut, wOut, _ = os.Pipe()
-	rErr, wErr, _ = os.Pipe()
-
-	os.Stdout = wOut
-	os.Stderr = wErr
-
-	errChan2 := make(chan error, 1)
-	go func() {
-		errChan2 <- Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
-		_ = wOut.Close()
-		_ = wErr.Close()
-	}()
-
-	outBytesStrict, _ := io.ReadAll(rOut)
-	errBytesStrict, _ := io.ReadAll(rErr)
-
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-
-	errStrict := <-errChan2
+	// Strict failure produces no stdout image but retains a diagnostic on stderr.
+	outBytesStrict, errBytesStrict, errStrict := captureStdoutStderr(t, func() error {
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+	})
 	if errStrict == nil {
 		t.Fatalf("Expected error in strict mode")
 	}
@@ -450,4 +397,56 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 	if !strings.Contains(string(errBytesStrict), "md2png: [Error] raw_html:") {
 		t.Errorf("Expected diagnostic error on stderr during strict failure, got: %q", string(errBytesStrict))
 	}
+}
+
+// captureStdoutStderr drains both pipes concurrently so either stream can grow
+// without blocking the render goroutine. It also restores process globals and
+// closes every descriptor before returning on success or failure.
+func captureStdoutStderr(t *testing.T, fn func() error) ([]byte, []byte, error) {
+	t.Helper()
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		_ = rOut.Close()
+		_ = wOut.Close()
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Stdout, os.Stderr = oldStdout, oldStderr
+		_ = rOut.Close()
+		_ = rErr.Close()
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+	os.Stdout, os.Stderr = wOut, wErr
+
+	type stream struct {
+		data []byte
+		err  error
+	}
+	outDone := make(chan stream, 1)
+	errDone := make(chan stream, 1)
+	go func() { data, err := io.ReadAll(rOut); outDone <- stream{data, err} }()
+	go func() { data, err := io.ReadAll(rErr); errDone <- stream{data, err} }()
+	renderDone := make(chan error, 1)
+	go func() {
+		err := fn()
+		_ = wOut.Close()
+		_ = wErr.Close()
+		renderDone <- err
+	}()
+
+	renderErr := <-renderDone
+	out, stderr := <-outDone, <-errDone
+	if out.err != nil {
+		t.Fatalf("read captured stdout: %v", out.err)
+	}
+	if stderr.err != nil {
+		t.Fatalf("read captured stderr: %v", stderr.err)
+	}
+	return out.data, stderr.data, renderErr
 }

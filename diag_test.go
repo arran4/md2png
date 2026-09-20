@@ -1,10 +1,27 @@
 package md2png
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
 	"github.com/yuin/goldmark/ast"
 )
+
+var kindTestUnsupportedBlock = ast.NewNodeKind("TestUnsupportedBlock")
+
+type testUnsupportedBlock struct{ ast.BaseBlock }
+
+func (n *testUnsupportedBlock) Kind() ast.NodeKind { return kindTestUnsupportedBlock }
+
+func (n *testUnsupportedBlock) Dump(source []byte, level int) {
+	ast.DumpHelper(n, source, level, nil, nil)
+}
 
 func TestDiagnostics(t *testing.T) {
 	md := []byte("Testing <br> unsupported and missing image ![alt](missing.png)")
@@ -195,9 +212,10 @@ func TestDiagnosticIgnoreCodes(t *testing.T) {
 	}
 }
 
-func TestDiagnosticsStrictUnsupportedNode(t *testing.T) {
-	// Create a dummy node that is a block but not natively handled by md2png
-	node := ast.NewDocument() // Reusing Document or a Custom node to hit the default case.
+func TestRenderUnsupportedHelperStrict(t *testing.T) {
+	// This is deliberately a helper unit test. ast.Document is normally
+	// supported by the renderer walk, so it is not used as an unsupported node.
+	node := &testUnsupportedBlock{}
 
 	opts := RenderOptions{
 		DiagnosticPolicy: &DiagnosticPolicy{
@@ -208,7 +226,7 @@ func TestDiagnosticsStrictUnsupportedNode(t *testing.T) {
 
 	r := &renderer{
 		diagPolicy: *opts.DiagnosticPolicy,
-		c: newCanvas(100, 10, opts.Theme, opts.Fonts, 16, 100),
+		c:          newCanvas(100, 10, opts.Theme, opts.Fonts, 16, 100),
 	}
 	r.renderUnsupported(node)
 
@@ -223,6 +241,90 @@ func TestDiagnosticsStrictUnsupportedNode(t *testing.T) {
 	}
 	if r.diagnostics[0].Severity != SeverityError {
 		t.Errorf("Expected SeverityError, got %v", r.diagnostics[0].Severity)
+	}
+}
+
+func TestStrictUnsupportedNodeThroughTraversal(t *testing.T) {
+	opts := RenderOptions{DiagnosticPolicy: &DiagnosticPolicy{FailOnUnsupported: true}}
+	if err := normalizeRenderOptions(&opts); err != nil {
+		t.Fatal(err)
+	}
+	r := &renderer{
+		c:          newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight),
+		baseSize:   opts.BaseFontSize,
+		diagPolicy: *opts.DiagnosticPolicy,
+	}
+	doc := ast.NewDocument()
+	doc.AppendChild(doc, &testUnsupportedBlock{})
+	err := r.renderDocument(nil, doc)
+	if err == nil {
+		t.Fatal("expected strict traversal error for unsupported node")
+	}
+	if len(r.diagnostics) != 1 || r.diagnostics[0].Code != DiagUnsupportedNode || r.diagnostics[0].Severity != SeverityError {
+		t.Fatalf("expected retained fatal unsupported-node diagnostic, got %#v", r.diagnostics)
+	}
+}
+
+func TestImageDiagnosticsMalformedFileAndHTTPFailure(t *testing.T) {
+	badPath := filepath.Join(t.TempDir(), "malformed.png")
+	if err := os.WriteFile(badPath, []byte("not a PNG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "deterministic image failure", http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	md := []byte(fmt.Sprintf("![local fallback](%s) ![remote fallback](%s/broken.png)", filepath.Base(badPath), server.URL))
+	base := RenderOptions{BaseDir: filepath.Dir(badPath), ImagePolicy: &ImagePolicy{AllowLocal: true, AllowRemote: true, HTTPClient: server.Client()}}
+
+	res, err := RenderWithDiagnostics(md, base)
+	if err != nil || res.Image == nil {
+		t.Fatalf("best-effort render = (%v, %v), want image and no error", res.Image, err)
+	}
+	if len(res.Diagnostics) != 2 {
+		t.Fatalf("got diagnostics %#v, want local decode and HTTP failures", res.Diagnostics)
+	}
+	for _, diag := range res.Diagnostics {
+		if diag.Code != DiagImageLoadFailed || diag.Severity != SeverityWarning || diag.Error == nil || diag.Offset != -1 {
+			t.Fatalf("unexpected best-effort diagnostic %#v", diag)
+		}
+	}
+	if !strings.Contains(res.Diagnostics[0].Error.Error(), "image: unknown format") {
+		t.Fatalf("expected malformed image decode cause, got %v", res.Diagnostics[0].Error)
+	}
+	if !strings.Contains(res.Diagnostics[1].Error.Error(), "418") {
+		t.Fatalf("expected HTTP status cause, got %v", res.Diagnostics[1].Error)
+	}
+
+	base.DiagnosticPolicy = &DiagnosticPolicy{FailOnImageError: true}
+	strict, strictErr := RenderWithDiagnostics(md, base)
+	if strictErr == nil || len(strict.Diagnostics) != 1 {
+		t.Fatalf("strict result = (%v, %#v), want error and first causal diagnostic", strictErr, strict.Diagnostics)
+	}
+	if !errors.Is(strictErr, strict.Diagnostics[0].Error) && strictErr.Error() != strict.Diagnostics[0].Error.Error() {
+		t.Fatalf("strict error %v did not retain diagnostic cause %v", strictErr, strict.Diagnostics[0].Error)
+	}
+}
+
+func TestRawHTMLDiagnosticOffsetAndImageOffsetUnavailable(t *testing.T) {
+	md := []byte("first line\nsecond <br> line\n![missing](missing.png)")
+	res, err := RenderWithDiagnostics(md, RenderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRawOffset := strings.Index(string(md), "<br>")
+	var sawRaw, sawImage bool
+	for _, diag := range res.Diagnostics {
+		switch diag.Code {
+		case DiagRawHTML:
+			sawRaw = diag.Offset == wantRawOffset
+		case DiagImageLoadFailed:
+			sawImage = diag.Offset == -1
+		}
+	}
+	if !sawRaw || !sawImage {
+		t.Fatalf("expected raw offset %d and unavailable image offset, got %#v", wantRawOffset, res.Diagnostics)
 	}
 }
 

@@ -7,6 +7,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
 func TestSafeHTML(t *testing.T) {
@@ -123,6 +129,54 @@ func TestSafeHTML(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRawHTMLRenderPathSuppressesSeparatedBodies(t *testing.T) {
+	md := []byte("Before <script>alert('script body')</script> middle <style>style body { color: red }</style> after <!-- comment body --> last<br>tail")
+	parser := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()))
+	doc := parser.Parser().Parse(text.NewReader(md))
+	paragraph, ok := doc.FirstChild().(*ast.Paragraph)
+	if !ok {
+		t.Fatalf("expected paragraph, got %T", doc.FirstChild())
+	}
+	opts := RenderOptions{}
+	if err := normalizeRenderOptions(&opts); err != nil {
+		t.Fatal(err)
+	}
+	r := &renderer{c: newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)}
+	var tokens []textToken
+	r.collectInlineTokens(paragraph, md, opts.Fonts.Regular, opts.BaseFontSize, opts.Theme.FG, &tokens)
+	var got strings.Builder
+	for _, token := range tokens {
+		if token.newline {
+			got.WriteByte('\n')
+		} else {
+			got.WriteString(token.text)
+		}
+	}
+	drawable := got.String()
+	for _, forbidden := range []string{"alert('script body')", "style body", "comment body"} {
+		if strings.Contains(drawable, forbidden) {
+			t.Fatalf("raw HTML body leaked into drawable tokens: %q", drawable)
+		}
+	}
+	for _, safe := range []string{"Before ", " middle ", " after ", " last", "tail"} {
+		if !strings.Contains(drawable, safe) {
+			t.Fatalf("safe prose %q missing from drawable tokens %q", safe, drawable)
+		}
+	}
+	if !strings.Contains(drawable, "last\ntail") {
+		t.Fatalf("expected <br> newline in drawable tokens, got %q", drawable)
+	}
+
+	block := []byte("<div>\nblock safe<br>next\n</div>\n\nAfter block")
+	res, err := RenderWithDiagnostics(block, RenderOptions{})
+	if err != nil || res.Image == nil {
+		t.Fatalf("block HTML render = (%v, %v), want image and no error", res.Image, err)
+	}
+	if len(res.Diagnostics) == 0 || res.Diagnostics[0].Code != DiagRawHTML {
+		t.Fatalf("expected block raw-HTML diagnostic, got %#v", res.Diagnostics)
 	}
 }
 

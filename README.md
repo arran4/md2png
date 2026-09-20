@@ -59,6 +59,7 @@ Requires Go 1.22 or newer.
 | `--footnote-links` | Emit link targets as numbered footnotes | `true` |
 | `--footnote-images` | Emit image targets as numbered footnotes | `false` |
 | `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
+| `--strict` | Fail when rendering emits a warning diagnostic | `false` |
 
 ### Examples
 
@@ -165,6 +166,12 @@ img := res.Image
 ```
 
 Raw HTML tags are rigorously stripped. Any `DiagRawHTML` entries generated indicate stripped elements. `<br>` translates natively to empty text/vertical gaps while script/styles are ignored entirely without triggering network evaluations.
+
+The CLI writes diagnostics to stderr, keeping image bytes on stdout clean when `--out -` is used. By default rendering is best-effort: it returns an image plus warning diagnostics for degraded content. `--strict` treats raw HTML, unsupported nodes, and image failures as errors. `RenderWithDiagnostics` always retains diagnostics in its `RenderResult`, including when strict mode returns an error.
+
+Diagnostic `Code` values are stable machine-readable categories. `Offset` is a zero-based byte offset into the Markdown source when Goldmark exposes one; `-1` means unavailable. In particular, image nodes do not provide a reliable source segment, so image-load diagnostics use `-1`; byte offset `0` is a valid known location.
+
+The `unsupported_nodes.png` golden image intentionally changed with this policy: warning text is now reported as a diagnostic instead of being painted into the rendered image.
 
 ### Security and Image Loading Policy
 

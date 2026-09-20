@@ -524,6 +524,7 @@ type renderer struct {
 	diagPolicy     DiagnosticPolicy
 	diagnostics    []Diagnostic
 	renderErr      error
+	htmlState      htmlExtractionState
 }
 
 type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
@@ -966,6 +967,11 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch c := child.(type) {
 		case *ast.Text:
+			// Goldmark represents inline script/style bodies as Text nodes between
+			// separate opening and closing RawHTML nodes.
+			if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
+				continue
+			}
 			text := string(c.Segment.Value(md))
 			if text != "" {
 				parts := strings.Split(text, "\n")
@@ -1018,9 +1024,11 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 					Severity:    SeverityWarning,
 					NodeType:    "Image",
 					Destination: dest,
-					Offset:      0, // Offset is unfortunately difficult to ascertain accurately for *ast.Image locally without a walk tracer. It will remain 0 here.
-					Message:     fmt.Sprintf("Failed to load image: %v", err),
-					Error:       err,
+					// Goldmark's Image node has no reliable source segment. -1 means
+					// unavailable; zero remains a valid source byte offset.
+					Offset:  -1,
+					Message: fmt.Sprintf("Failed to load image: %v", err),
+					Error:   err,
 				}
 
 				if r.diagPolicy.FailOnImageError ||
@@ -1098,7 +1106,7 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				seg := segments.At(i)
 				htmlContent += string(seg.Value(md))
 			}
-			parts := r.safeExtractHTMLText([]byte(htmlContent))
+			parts := extractHTMLText([]byte(htmlContent), &r.htmlState)
 			for _, part := range parts {
 				if part == "\n" {
 					*out = append(*out, textToken{newline: true})
@@ -1590,97 +1598,75 @@ func (r *renderer) addDiagnostic(d Diagnostic) {
 	r.diagnostics = append(r.diagnostics, d)
 }
 
+// htmlExtractionState carries stripping state across Goldmark AST nodes. In
+// particular, inline <script>body</script> is represented as RawHTML, Text,
+// RawHTML rather than one complete string.
+type htmlExtractionState struct {
+	suppressedTag string
+	inComment     bool
+}
+
 func (r *renderer) safeExtractHTMLText(input []byte) []string {
+	state := htmlExtractionState{}
+	return extractHTMLText(input, &state)
+}
+
+func extractHTMLText(input []byte, state *htmlExtractionState) []string {
 	var result []string
 	var current strings.Builder
 
 	i := 0
-	inScript := false
-	inStyle := false
-
 	str := string(input)
 
 	for i < len(str) {
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<script>") || strings.HasPrefix(strings.ToLower(str[i:]), "<script ") || strings.HasPrefix(strings.ToLower(str[i:]), "<script\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<script\n") {
-			inScript = true
-			for i < len(str) && str[i] != '>' {
-				i++
+		if state.inComment {
+			end := strings.Index(str[i:], "-->")
+			if end < 0 {
+				break
 			}
-			if i < len(str) {
-				i++
-			}
+			state.inComment = false
+			i += end + len("-->")
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</script>") || strings.HasPrefix(strings.ToLower(str[i:]), "</script >") || strings.HasPrefix(strings.ToLower(str[i:]), "</script\t") || strings.HasPrefix(strings.ToLower(str[i:]), "</script\n") {
-			inScript = false
-			for i < len(str) && str[i] != '>' {
-				i++
+		if state.suppressedTag != "" {
+			start := strings.IndexByte(str[i:], '<')
+			if start < 0 {
+				break
 			}
-			if i < len(str) {
-				i++
+			i += start
+			name, closing, end, ok := htmlTagAt(str, i)
+			if ok {
+				if closing && name == state.suppressedTag {
+					state.suppressedTag = ""
+				}
+				i = end
+				continue
 			}
-			continue
-		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<style>") || strings.HasPrefix(strings.ToLower(str[i:]), "<style ") || strings.HasPrefix(strings.ToLower(str[i:]), "<style\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<style\n") {
-			inStyle = true
-			for i < len(str) && str[i] != '>' {
-				i++
-			}
-			if i < len(str) {
-				i++
-			}
-			continue
-		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "</style>") || strings.HasPrefix(strings.ToLower(str[i:]), "</style >") || strings.HasPrefix(strings.ToLower(str[i:]), "</style\t") || strings.HasPrefix(strings.ToLower(str[i:]), "</style\n") {
-			inStyle = false
-			for i < len(str) && str[i] != '>' {
-				i++
-			}
-			if i < len(str) {
-				i++
-			}
+			i++
 			continue
 		}
 		if strings.HasPrefix(str[i:], "<!--") {
-			idx := strings.Index(str[i:], "-->")
-			if idx != -1 {
-				i += idx + 3
-			} else {
-				i = len(str)
-			}
+			state.inComment = true
+			i += len("<!--")
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(str[i:]), "<br>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br/>") || strings.HasPrefix(strings.ToLower(str[i:]), "<br />") || strings.HasPrefix(strings.ToLower(str[i:]), "<br\t") || strings.HasPrefix(strings.ToLower(str[i:]), "<br\n") {
-			j := i
-			for j < len(str) && str[j] != '>' {
-				j++
-			}
-			if j < len(str) {
-				if current.Len() > 0 {
-					result = append(result, html.UnescapeString(current.String()))
-					current.Reset()
+		if str[i] == '<' {
+			name, closing, end, ok := htmlTagAt(str, i)
+			if ok {
+				if !closing && (name == "script" || name == "style") {
+					state.suppressedTag = name
+				} else if !closing && name == "br" {
+					if current.Len() > 0 {
+						result = append(result, html.UnescapeString(current.String()))
+						current.Reset()
+					}
+					result = append(result, "\n")
 				}
-				result = append(result, "\n")
-				i = j + 1
+				i = end
 				continue
 			}
 		}
-		if str[i] == '<' {
-			j := i
-			for j < len(str) && str[j] != '>' {
-				j++
-			}
-			if j < len(str) {
-				i = j + 1
-			} else {
-				i++
-			}
-			continue
-		}
-
-		if !inScript && !inStyle {
-			current.WriteByte(str[i])
-		}
+		current.WriteByte(str[i])
 		i++
 	}
 
@@ -1691,8 +1677,37 @@ func (r *renderer) safeExtractHTMLText(input []byte) []string {
 	return result
 }
 
+// htmlTagAt recognises only the minimal tag syntax required by the stripping
+// policy. It is deliberately not an HTML parser.
+func htmlTagAt(s string, start int) (name string, closing bool, end int, ok bool) {
+	if start >= len(s) || s[start] != '<' {
+		return "", false, start, false
+	}
+	end = strings.IndexByte(s[start:], '>')
+	if end < 0 {
+		return "", false, start, false
+	}
+	end += start + 1
+	i := start + 1
+	if i < len(s) && s[i] == '/' {
+		closing = true
+		i++
+	}
+	for i < end && unicode.IsSpace(rune(s[i])) {
+		i++
+	}
+	begin := i
+	for i < end && (unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i]))) {
+		i++
+	}
+	if begin == i {
+		return "", false, start, false
+	}
+	return strings.ToLower(s[begin:i]), closing, end, true
+}
+
 func (r *renderer) renderUnsupported(node ast.Node) {
-	offset := 0
+	offset := -1
 	if node.Lines().Len() > 0 {
 		offset = node.Lines().At(0).Start
 	}
@@ -1740,6 +1755,12 @@ func (r *renderer) render(md []byte) error {
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(md))
+	return r.renderDocument(md, doc)
+}
+
+// renderDocument contains the shared AST traversal. Keeping it separate from
+// parsing lets tests verify diagnostics for real traversal nodes.
+func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 	if err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if r.renderErr != nil {
 			return ast.WalkStop, r.renderErr
@@ -1860,7 +1881,7 @@ func (r *renderer) render(md []byte) error {
 				}
 			}
 
-			parts := r.safeExtractHTMLText([]byte(htmlContent))
+			parts := extractHTMLText([]byte(htmlContent), &r.htmlState)
 			var tokens []textToken
 
 			for _, part := range parts {
@@ -2038,7 +2059,9 @@ type Diagnostic struct {
 	Destination string // Target URI/path (if applicable, e.g. for image)
 	Message     string // Human-readable detail
 	Error       error  // Underlying cause, if applicable
-	Offset      int    // Source byte offset, 0 if unknown
+	// Offset is a zero-based source byte offset when available. It is -1 when
+	// the Goldmark node does not expose a reliable location; zero is valid.
+	Offset int
 }
 
 func (d Diagnostic) String() string {
@@ -2049,7 +2072,7 @@ func (d Diagnostic) String() string {
 	if d.Destination != "" {
 		msg += fmt.Sprintf(" (dest: %s)", d.Destination)
 	}
-	if d.Offset > 0 {
+	if d.Offset >= 0 {
 		msg += fmt.Sprintf(" at offset %d", d.Offset)
 	}
 	return msg
