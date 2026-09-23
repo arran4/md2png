@@ -1325,10 +1325,10 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					flush(false)
 				}
 				if segWidth > maxWidth {
-					runes := []rune(seg)
+
 					currentWord := ""
 					currentWidth := 0.0
-					for _, r := range runes {
+					for _, r := range seg {
 						charStr := string(r)
 						charWidth := measureWidth(font, tok.size, charStr)
 						if currentWidth+charWidth > maxWidth && len(currentWord) > 0 {
@@ -1548,8 +1548,11 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 			}
 			segWidth := int(measureWidth(font, tok.size, seg))
 			maxWidth += segWidth
-			if segWidth > minWidth {
-				minWidth = segWidth
+			for _, r := range seg {
+				charWidth := int(measureWidth(font, tok.size, string(r)))
+				if charWidth > minWidth {
+					minWidth = charWidth
+				}
 			}
 		}
 	}
@@ -1637,30 +1640,36 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	}
 
 	availableWidth := r.c.w - 2*r.c.margin
-	if availableWidth < 20 {
-		availableWidth = 20
-	}
 
 	colWidths := make([]int, colCount)
+
+	if totalMinWidth > availableWidth {
+		diag := Diagnostic{
+			Code:     DiagnosticCode("table_layout_impossible"),
+			Severity: SeverityWarning,
+			NodeType: "Table",
+			Message:  "table minimum width exceeds available canvas width",
+		}
+		if r.diagPolicy.FailOnUnsupported {
+			diag.Severity = SeverityError
+			r.addDiagnostic(diag)
+			r.renderErr = ErrResourceLimit
+			return
+		}
+		r.addDiagnostic(diag)
+
+		// Fallback: strictly enforce min width and let it clip/overflow margins visually,
+		// but since we want to "Define an explicit, deterministic error or other documented fallback",
+		// we will abort rendering the table gracefully.
+		// Let's draw a fallback text box instead to not silently drop.
+		r.c.cursorY += int(r.baseSize)
+		r.c.drawTokens([]textToken{{text: "[Table omitted: insufficient width]", font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+		return
+	}
 
 	if totalMaxWidth <= availableWidth {
 		for col := 0; col < colCount; col++ {
 			colWidths[col] = colMaxWidths[col]
-		}
-	} else if totalMinWidth > availableWidth {
-		contentWidth := availableWidth - border*(colCount+1)
-		totalMinContent := totalMinWidth - border*(colCount+1)
-		if contentWidth < 1 {
-			contentWidth = 1
-		}
-		if totalMinContent < 1 {
-			totalMinContent = 1
-		}
-		for col := 0; col < colCount; col++ {
-			colWidths[col] = (colMinWidths[col] * contentWidth) / totalMinContent
-			if colWidths[col] < 1 {
-				colWidths[col] = 1
-			}
 		}
 	} else {
 		extraSpace := availableWidth - totalMinWidth
