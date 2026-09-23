@@ -1229,7 +1229,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		x := left
 		lineWidthForAlign := 0
 		for _, w := range line {
-			lineWidthForAlign += int(measureWidth(w.font, w.size, w.text))
+			lineWidthForAlign += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
 		}
 		if align == extensionAST.AlignCenter && lineWidthForAlign < (right-left) {
 			x = left + (right-left-lineWidthForAlign)/2
@@ -1330,7 +1330,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					currentWidth := 0.0
 					for _, r := range seg {
 						charStr := string(r)
-						charWidth := measureWidth(font, tok.size, charStr)
+						charWidth := math.Ceil(measureWidth(font, tok.size, charStr))
 						if currentWidth+charWidth > maxWidth && len(currentWord) > 0 {
 							line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
 							if tok.size > lineMaxSize {
@@ -1531,8 +1531,10 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 		if tok.image != nil {
 			bounds := tok.image.Bounds()
 			w := bounds.Dx()
-			if w > minWidth {
-				minWidth = w
+			// Images can be scaled down by drawTokens to fit the column width.
+			// Therefore, they do not enforce a strict minimum width beyond 1px.
+			if 1 > minWidth {
+				minWidth = 1
 			}
 			maxWidth += w
 			continue
@@ -1546,10 +1548,10 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 			if seg == "" {
 				continue
 			}
-			segWidth := int(measureWidth(font, tok.size, seg))
+			segWidth := int(math.Ceil(measureWidth(font, tok.size, seg)))
 			maxWidth += segWidth
 			for _, r := range seg {
-				charWidth := int(measureWidth(font, tok.size, string(r)))
+				charWidth := int(math.Ceil(measureWidth(font, tok.size, string(r))))
 				if charWidth > minWidth {
 					minWidth = charWidth
 				}
@@ -1630,6 +1632,9 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		}
 		colMinWidths[col] = minW + 2*cellPadding
 		colMaxWidths[col] = maxW + 2*cellPadding
+		if colMaxWidths[col] < colMinWidths[col] {
+			colMaxWidths[col] = colMinWidths[col]
+		}
 	}
 
 	totalMinWidth := border * (colCount + 1)
@@ -1653,17 +1658,19 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		if r.diagPolicy.FailOnUnsupported {
 			diag.Severity = SeverityError
 			r.addDiagnostic(diag)
-			r.renderErr = ErrResourceLimit
+			r.renderErr = ErrNoDrawableWidth
 			return
 		}
 		r.addDiagnostic(diag)
 
-		// Fallback: strictly enforce min width and let it clip/overflow margins visually,
-		// but since we want to "Define an explicit, deterministic error or other documented fallback",
-		// we will abort rendering the table gracefully.
-		// Let's draw a fallback text box instead to not silently drop.
+		// Fallback for impossible layout:
+		// We omit the table entirely because it cannot fit within the available canvas width without silent clipping.
 		r.c.cursorY += int(r.baseSize)
-		r.c.drawTokens([]textToken{{text: "[Table omitted: insufficient width]", font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+		fallbackText := "[Table omitted: insufficient width]"
+		// Ensure fallback text itself doesn't overflow a tiny canvas by measuring first.
+		if int(math.Ceil(measureWidth(r.c.fonts.Regular, r.baseSize, fallbackText))) <= availableWidth {
+			r.c.drawTokens([]textToken{{text: fallbackText, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+		}
 		return
 	}
 
