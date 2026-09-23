@@ -1253,7 +1253,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 				rect := image.Rect(x, underlineY, x+width, underlineY+1)
 				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
 			}
-			x += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
+			x += width
 		}
 
 		metrics = append(metrics, lineMetric{baseline: baseline, height: lineHeight})
