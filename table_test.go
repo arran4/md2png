@@ -27,14 +27,38 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 
 	opts = RenderOptions{
 		ImagePolicy: &policy,
-		Width: 200,
+		Width: 250,
+		Margin: 10,
 	}
-	img2, err := Render(md, opts)
+	img2, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
 		t.Fatalf("Render failed for narrow width table: %v", err)
 	}
-	if img2.Bounds().Dx() != 200 {
-		t.Fatalf("expected width 200")
+	for _, diag := range img2.Diagnostics {
+		if diag.Code == DiagnosticCode("table_layout_impossible") {
+			t.Fatalf("Table should fit in width 250 with margin 10, but got table_layout_impossible")
+		}
+	}
+	imgNarrow := img2.Image
+	if err != nil {
+		t.Fatalf("Render failed for narrow width table: %v", err)
+	}
+	if imgNarrow.Bounds().Dx() != 250 {
+		t.Fatalf("expected width 250")
+	}
+	// Also prove table is rendered by checking that the center is not purely white
+	centerNonWhite := false
+	for y := imgNarrow.Bounds().Min.Y; y < imgNarrow.Bounds().Max.Y; y++ {
+		for x := 100; x < 150; x++ {
+			r, g, b, _ := imgNarrow.At(x, y).RGBA()
+			if r < 0xff00 || g < 0xff00 || b < 0xff00 {
+				centerNonWhite = true
+				break
+			}
+		}
+	}
+	if !centerNonWhite {
+		t.Fatalf("Table does not appear to be rendered, center is purely background")
 	}
 
 	// Test impossible layout (too narrow to fit borders + 1 char)
@@ -67,19 +91,19 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 		},
 	}
 	_, err = Render(md, strictOpts)
-	if err != ErrNoDrawableWidth {
-		t.Fatalf("Expected ErrNoDrawableWidth in strict mode for impossible table, got: %v", err)
+	if err != ErrImpossibleTableLayout {
+		t.Fatalf("Expected ErrImpossibleTableLayout in strict mode for impossible table, got: %v", err)
 	}
 
 	// Verify pixels to ensure table is rendered within bounds
 	// For image with width 200, table should be bounded by margins. Default margin is 48.
 	// So x < 48 and x >= 152 should be pure background (white or transparent).
-	bounds := img2.Bounds()
-	margin := 48
+	bounds := imgNarrow.Bounds()
+	margin := 10
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		// Check left margin
 		for x := bounds.Min.X; x < margin; x++ {
-			r, g, b, _ := img2.At(x, y).RGBA()
+			r, g, b, _ := imgNarrow.At(x, y).RGBA()
 			if r != 0xffff || g != 0xffff || b != 0xffff {
 				// We expect white background
 				// Actually, default background might be transparent or white depending on implementation,
@@ -92,7 +116,7 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 		}
 		// Check right margin
 		for x := bounds.Max.X - margin; x < bounds.Max.X; x++ {
-			r, g, b, _ := img2.At(x, y).RGBA()
+			r, g, b, _ := imgNarrow.At(x, y).RGBA()
 			if r < 0xff00 || g < 0xff00 || b < 0xff00 {
 				t.Fatalf("Found non-white pixel in right margin at (%d, %d)", x, y)
 			}
@@ -122,6 +146,9 @@ func TestTableLayoutWithImages(t *testing.T) {
 
 	// Check that we didn't fallback
 	res, err := RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
 	for _, diag := range res.Diagnostics {
 		if diag.Code == DiagnosticCode("table_layout_impossible") {
 			t.Fatalf("Image table should not trigger impossible layout because images can scale down")

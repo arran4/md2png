@@ -53,6 +53,7 @@ var (
 	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
 	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
 	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
+	ErrImpossibleTableLayout = errors.New("md2png: table minimum width exceeds available canvas width")
 	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
 	ErrPolicyDenied     = errors.New("md2png: image loading denied by policy")
 	ErrSandboxViolation = errors.New("md2png: path violates sandbox restrictions")
@@ -1252,7 +1253,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 				rect := image.Rect(x, underlineY, x+width, underlineY+1)
 				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
 			}
-			x += width
+			x += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
 		}
 
 		metrics = append(metrics, lineMetric{baseline: baseline, height: lineHeight})
@@ -1653,12 +1654,13 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 			Code:     DiagnosticCode("table_layout_impossible"),
 			Severity: SeverityWarning,
 			NodeType: "Table",
+			Offset:   -1,
 			Message:  "table minimum width exceeds available canvas width",
 		}
 		if r.diagPolicy.FailOnUnsupported {
 			diag.Severity = SeverityError
 			r.addDiagnostic(diag)
-			r.renderErr = ErrNoDrawableWidth
+			r.renderErr = ErrImpossibleTableLayout
 			return
 		}
 		r.addDiagnostic(diag)
