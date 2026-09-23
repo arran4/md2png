@@ -1525,8 +1525,18 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 	}
 	minWidth := 0
 	maxWidth := 0
+	currentLineWidth := 0
+
+	flushLine := func() {
+		if currentLineWidth > maxWidth {
+			maxWidth = currentLineWidth
+		}
+		currentLineWidth = 0
+	}
+
 	for _, tok := range tokens {
 		if tok.newline {
+			flushLine()
 			continue
 		}
 		if tok.image != nil {
@@ -1537,7 +1547,7 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 			if 1 > minWidth {
 				minWidth = 1
 			}
-			maxWidth += w
+			currentLineWidth += w
 			continue
 		}
 		font := tok.font
@@ -1550,7 +1560,7 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 				continue
 			}
 			segWidth := int(math.Ceil(measureWidth(font, tok.size, seg)))
-			maxWidth += segWidth
+			currentLineWidth += segWidth
 			for _, r := range seg {
 				charWidth := int(math.Ceil(measureWidth(font, tok.size, string(r))))
 				if charWidth > minWidth {
@@ -1559,6 +1569,8 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 			}
 		}
 	}
+	flushLine()
+
 	return minWidth, maxWidth
 }
 

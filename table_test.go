@@ -40,9 +40,6 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 		}
 	}
 	imgNarrow := img2.Image
-	if err != nil {
-		t.Fatalf("Render failed for narrow width table: %v", err)
-	}
 	if imgNarrow.Bounds().Dx() != 250 {
 		t.Fatalf("expected width 250")
 	}
@@ -96,8 +93,8 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 	}
 
 	// Verify pixels to ensure table is rendered within bounds
-	// For image with width 200, table should be bounded by margins. Default margin is 48.
-	// So x < 48 and x >= 152 should be pure background (white or transparent).
+	// For image with width 250, table should be bounded by margin 10.
+	// So x < 10 and x >= 240 should be pure background (white or transparent).
 	bounds := imgNarrow.Bounds()
 	margin := 10
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -153,5 +150,71 @@ func TestTableLayoutWithImages(t *testing.T) {
 		if diag.Code == DiagnosticCode("table_layout_impossible") {
 			t.Fatalf("Image table should not trigger impossible layout because images can scale down")
 		}
+	}
+}
+
+
+func TestTableAlignmentPixels(t *testing.T) {
+	md := []byte(`
+| L | C | R |
+| :--- | :----: | ----: |
+| L | C | R |
+`)
+	policy := DefaultCLIImagePolicy()
+	opts := RenderOptions{
+		ImagePolicy: &policy,
+		Width: 300,
+		Margin: 10,
+	}
+	res, err := RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	img := res.Image
+
+	findTextX := func(minX, maxX, startY, endY int) (int, int) {
+		firstX := maxX
+		lastX := minX
+		found := false
+		for y := startY; y < endY; y++ {
+			for x := minX; x < maxX; x++ {
+				r, g, b, _ := img.At(x, y).RGBA()
+				if r < 0x8000 && g < 0x8000 && b < 0x8000 {
+					if x < firstX {
+						firstX = x
+					}
+					if x > lastX {
+						lastX = x
+					}
+					found = true
+				}
+			}
+		}
+		if !found {
+			return -1, -1
+		}
+		return firstX, lastX
+	}
+
+	lxMin, _ := findTextX(15, 95, 80, 130)
+	cxMin, cxMax := findTextX(105, 185, 80, 130)
+	_, rxMax := findTextX(195, 285, 80, 130)
+
+	if lxMin == -1 || cxMin == -1 || rxMax == -1 {
+		t.Fatalf("Failed to find text in cells")
+	}
+
+	if lxMin > 30 {
+		t.Errorf("Left aligned text is too far right: %d", lxMin)
+	}
+
+	cCenter := (105 + 185) / 2
+	textCenter := (cxMin + cxMax) / 2
+	if textCenter < cCenter - 15 || textCenter > cCenter + 15 {
+		t.Errorf("Center aligned text is not centered: textCenter=%d vs cellCenter=%d", textCenter, cCenter)
+	}
+
+	if rxMax < 260 {
+		t.Errorf("Right aligned text is too far left: %d", rxMax)
 	}
 }
