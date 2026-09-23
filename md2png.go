@@ -1540,14 +1540,15 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 			continue
 		}
 		if tok.image != nil {
+			flushLine()
 			bounds := tok.image.Bounds()
 			w := bounds.Dx()
-			// Images can be scaled down by drawTokens to fit the column width.
-			// Therefore, they do not enforce a strict minimum width beyond 1px.
 			if 1 > minWidth {
 				minWidth = 1
 			}
-			currentLineWidth += w
+			if w > maxWidth {
+				maxWidth = w
+			}
 			continue
 		}
 		font := tok.font
