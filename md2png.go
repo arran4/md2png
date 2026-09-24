@@ -53,6 +53,7 @@ var (
 	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
 	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
 	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
+	ErrImpossibleTableLayout = errors.New("md2png: table minimum width exceeds available canvas width")
 	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
 	ErrPolicyDenied     = errors.New("md2png: image loading denied by policy")
 	ErrSandboxViolation = errors.New("md2png: path violates sandbox restrictions")
@@ -1190,7 +1191,7 @@ type lineMetric struct {
 	height   int
 }
 
-func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
+func (c *canvas) drawTokens(tokens []textToken, left, right int, align extensionAST.Alignment) []lineMetric {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -1227,6 +1228,24 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 		c.ensureHeightAbs(baseline + lineHeight)
 
 		x := left
+		lineWidthForAlign := 0
+		trailingSpaces := 0
+		for i := len(line) - 1; i >= 0; i-- {
+			if strings.TrimSpace(line[i].text) == "" {
+				trailingSpaces++
+			} else {
+				break
+			}
+		}
+		line = line[:len(line)-trailingSpaces]
+		for _, w := range line {
+			lineWidthForAlign += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
+		}
+		if align == extensionAST.AlignCenter && lineWidthForAlign < (right-left) {
+			x = left + (right-left-lineWidthForAlign)/2
+		} else if align == extensionAST.AlignRight && lineWidthForAlign < (right-left) {
+			x = right - lineWidthForAlign
+		}
 		for _, w := range line {
 			if w.font == nil {
 				w.font = c.fonts.Regular
@@ -1270,8 +1289,10 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 			drawWidth := bounds.Dx()
 			drawHeight := bounds.Dy()
 			x := left
-			if tok.center && maxWidthInt > drawWidth {
-				x += (maxWidthInt - drawWidth) / 2
+			if (tok.center || align == extensionAST.AlignCenter) && maxWidthInt > drawWidth {
+				x = left + (maxWidthInt - drawWidth) / 2
+			} else if align == extensionAST.AlignRight && maxWidthInt > drawWidth {
+				x = left + maxWidthInt - drawWidth
 			}
 
 			c.ensureHeightAbs(startY + drawHeight + int(c.ptSize*0.6))
@@ -1309,8 +1330,39 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int) []lineMetric {
 				lineWidth += segWidth
 				continue
 			}
-			if lineWidth+segWidth > maxWidth && len(line) > 0 {
-				flush(false)
+			if lineWidth+segWidth > maxWidth {
+				if len(line) > 0 {
+					flush(false)
+				}
+				if segWidth > maxWidth {
+
+					currentWord := ""
+					currentWidth := 0.0
+					for _, r := range seg {
+						charStr := string(r)
+						charWidth := math.Ceil(measureWidth(font, tok.size, charStr))
+						if currentWidth+charWidth > maxWidth && len(currentWord) > 0 {
+							line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+							if tok.size > lineMaxSize {
+								lineMaxSize = tok.size
+							}
+							flush(false)
+							currentWord = charStr
+							currentWidth = charWidth
+						} else {
+							currentWord += charStr
+							currentWidth += charWidth
+						}
+					}
+					if currentWord != "" {
+						line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+						if tok.size > lineMaxSize {
+							lineMaxSize = tok.size
+						}
+						lineWidth += currentWidth
+					}
+					continue
+				}
 			}
 			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
 			if tok.size > lineMaxSize {
@@ -1378,7 +1430,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			}
 			tokens = []textToken{{text: text, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}
 		}
-		metrics := r.c.drawTokens(tokens, contentLeft, r.c.w-r.c.margin)
+		metrics := r.c.drawTokens(tokens, contentLeft, r.c.w-r.c.margin, extensionAST.AlignLeft)
 		if len(metrics) > 0 {
 			ensureMarker(metrics[0].baseline)
 		} else {
@@ -1428,7 +1480,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			}
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
-				_ = r.c.drawTokens(tokens, contentLeft+10, r.c.w-r.c.margin)
+				_ = r.c.drawTokens(tokens, contentLeft+10, r.c.w-r.c.margin, extensionAST.AlignLeft)
 				r.c.addVSpace(6)
 				r.c.drawBlockquoteBar(quoteStart+2, r.c.cursorY-quoteStart-2)
 			}
@@ -1445,11 +1497,16 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 	}
 }
 
-func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHeader bool) [][]textToken {
+type tableCell struct {
+	tokens []textToken
+	align  extensionAST.Alignment
+}
+
+func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHeader bool) []tableCell {
 	if r.renderErr != nil {
 		return nil
 	}
-	var cells [][]textToken
+	var cells []tableCell
 	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
 		if r.renderErr != nil {
 			return nil
@@ -1464,24 +1521,81 @@ func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHead
 			if r.renderErr != nil {
 				return nil
 			}
-			cells = append(cells, tokens)
+			cells = append(cells, tableCell{tokens: tokens, align: tc.Alignment})
 		}
 	}
 	return cells
+}
+
+
+func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
+	if len(tokens) == 0 {
+		return 0, 0
+	}
+	minWidth := 0
+	maxWidth := 0
+	currentLineWidth := 0
+
+	flushLine := func() {
+		if currentLineWidth > maxWidth {
+			maxWidth = currentLineWidth
+		}
+		currentLineWidth = 0
+	}
+
+	for _, tok := range tokens {
+		if tok.newline {
+			flushLine()
+			continue
+		}
+		if tok.image != nil {
+			flushLine()
+			bounds := tok.image.Bounds()
+			w := bounds.Dx()
+			if 1 > minWidth {
+				minWidth = 1
+			}
+			if w > maxWidth {
+				maxWidth = w
+			}
+			continue
+		}
+		font := tok.font
+		if font == nil {
+			font = c.fonts.Regular
+		}
+		segments := splitTextPreserveSpaces(tok.text)
+		for _, seg := range segments {
+			if seg == "" {
+				continue
+			}
+			segWidth := int(math.Ceil(measureWidth(font, tok.size, seg)))
+			currentLineWidth += segWidth
+			for _, r := range seg {
+				charWidth := int(math.Ceil(measureWidth(font, tok.size, string(r))))
+				if charWidth > minWidth {
+					minWidth = charWidth
+				}
+			}
+		}
+	}
+	flushLine()
+
+	return minWidth, maxWidth
 }
 
 func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	if r.renderErr != nil {
 		return
 	}
-	var rows [][][]textToken
+	var rows [][]tableCell
 	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
 		if r.renderErr != nil {
 			return
 		}
 		switch n := node.(type) {
 		case *extensionAST.TableHeader:
-			var cells [][]textToken
+			var cells []tableCell
 			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if r.renderErr != nil {
 					return
@@ -1496,7 +1610,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 					if r.renderErr != nil {
 						return
 					}
-					cells = append(cells, tokens)
+					cells = append(cells, tableCell{tokens: tokens, align: tc.Alignment})
 				}
 			}
 			rows = append(rows, cells)
@@ -1522,19 +1636,90 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	if cellPadding < 8 {
 		cellPadding = 8
 	}
+
+	colMinWidths := make([]int, colCount)
+	colMaxWidths := make([]int, colCount)
+	for col := 0; col < colCount; col++ {
+		minW := 20
+		maxW := 0
+		for _, row := range rows {
+			if col < len(row) {
+				cMin, cMax := measureCellBounds(r.c, row[col].tokens)
+				if cMin > minW {
+					minW = cMin
+				}
+				if cMax > maxW {
+					maxW = cMax
+				}
+			}
+		}
+		colMinWidths[col] = minW + 2*cellPadding
+		colMaxWidths[col] = maxW + 2*cellPadding
+		if colMaxWidths[col] < colMinWidths[col] {
+			colMaxWidths[col] = colMinWidths[col]
+		}
+	}
+
+	totalMinWidth := border * (colCount + 1)
+	totalMaxWidth := border * (colCount + 1)
+	for col := 0; col < colCount; col++ {
+		totalMinWidth += colMinWidths[col]
+		totalMaxWidth += colMaxWidths[col]
+	}
+
 	availableWidth := r.c.w - 2*r.c.margin
-	minWidth := colCount*40 + border*(colCount+1)
-	if availableWidth < minWidth {
-		availableWidth = minWidth
+
+	colWidths := make([]int, colCount)
+
+	if totalMinWidth > availableWidth {
+		diag := Diagnostic{
+			Code:     DiagnosticCode("table_layout_impossible"),
+			Severity: SeverityWarning,
+			NodeType: "Table",
+			Offset:   -1,
+			Message:  "table minimum width exceeds available canvas width",
+		}
+		if r.diagPolicy.FailOnUnsupported {
+			diag.Severity = SeverityError
+			r.addDiagnostic(diag)
+			r.renderErr = ErrImpossibleTableLayout
+			return
+		}
+		r.addDiagnostic(diag)
+
+		// Fallback for impossible layout:
+		// We omit the table entirely because it cannot fit within the available canvas width without silent clipping.
+		r.c.cursorY += int(r.baseSize)
+		fallbackText := "[Table omitted: insufficient width]"
+		// Ensure fallback text itself doesn't overflow a tiny canvas by measuring first.
+		if int(math.Ceil(measureWidth(r.c.fonts.Regular, r.baseSize, fallbackText))) <= availableWidth {
+			r.c.drawTokens([]textToken{{text: fallbackText, font: r.c.fonts.Regular, size: r.baseSize, color: r.c.th.FG}}, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+		}
+		return
 	}
-	colWidth := (availableWidth - border*(colCount+1)) / colCount
-	if colWidth < 60 {
-		colWidth = 60
+
+	if totalMaxWidth <= availableWidth {
+		for col := 0; col < colCount; col++ {
+			colWidths[col] = colMaxWidths[col]
+		}
+	} else {
+		extraSpace := availableWidth - totalMinWidth
+		totalMaxDiff := totalMaxWidth - totalMinWidth
+		for col := 0; col < colCount; col++ {
+			diff := colMaxWidths[col] - colMinWidths[col]
+			added := 0
+			if totalMaxDiff > 0 {
+				added = (diff * extraSpace) / totalMaxDiff
+			}
+			colWidths[col] = colMinWidths[col] + added
+		}
 	}
-	tableWidth := colCount*colWidth + border*(colCount+1)
-	if tableWidth > availableWidth {
-		tableWidth = availableWidth
+
+	tableWidth := border * (colCount + 1)
+	for col := 0; col < colCount; col++ {
+		tableWidth += colWidths[col]
 	}
+
 	tableLeft := r.c.margin
 	tableRight := tableLeft + tableWidth
 
@@ -1548,8 +1733,11 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		rowTop := y
 		maxCellHeight := 0
 		for col := 0; col < colCount; col++ {
-			cellLeft := tableLeft + border + col*(colWidth+border)
-			cellRight := cellLeft + colWidth
+			cellLeft := tableLeft + border
+			for c := 0; c < col; c++ {
+				cellLeft += colWidths[c] + border
+			}
+			cellRight := cellLeft + colWidths[col]
 			contentLeft := cellLeft + cellPadding
 			contentRight := cellRight - cellPadding
 			if contentRight <= contentLeft {
@@ -1558,10 +1746,12 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 			start := rowTop + cellPadding
 			r.c.cursorY = start
 			var tokens []textToken
+			align := extensionAST.AlignLeft
 			if col < len(row) {
-				tokens = row[col]
+				tokens = row[col].tokens
+				align = row[col].align
 			}
-			metrics := r.c.drawTokens(tokens, contentLeft, contentRight)
+			metrics := r.c.drawTokens(tokens, contentLeft, contentRight, align)
 			height := r.c.cursorY - start
 			if len(metrics) == 0 && len(tokens) == 0 {
 				height = int(r.baseSize * 1.1)
@@ -1582,9 +1772,12 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 
 	tableBottom := y - border
 	r.c.ensureHeightAbs(tableBottom + border)
+	x := tableLeft
 	for col := 0; col <= colCount; col++ {
-		x := tableLeft + col*(colWidth+border)
 		draw.Draw(r.c.img, image.Rect(x, tableTop, x+border, tableBottom+border), borderColor, image.Point{}, draw.Src)
+		if col < colCount {
+			x += colWidths[col] + border
+		}
 	}
 	r.c.cursorY = tableBottom + int(r.baseSize*0.7)
 }
@@ -1745,7 +1938,7 @@ func (r *renderer) drawFootnotes() {
 	for i, note := range r.footnotes {
 		label := fmt.Sprintf("[%d] %s", i+1, note)
 		tokens := []textToken{{text: label, font: r.c.fonts.Regular, size: noteSize, color: r.c.th.FG}}
-		_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+		_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
 	}
 }
 
@@ -1790,7 +1983,7 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 				return ast.WalkStop, r.renderErr
 			}
 			r.c.addVSpace(int(r.baseSize * 0.75))
-			_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+			_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
 			r.c.addVSpace(int(r.baseSize * 0.5))
 			return ast.WalkSkipChildren, nil
 		case *ast.Paragraph:
@@ -1800,7 +1993,7 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 				return ast.WalkStop, r.renderErr
 			}
 			if len(tokens) > 0 {
-				_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+				_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
 				r.c.addVSpace(int(r.baseSize * 0.9))
 			}
 			return ast.WalkSkipChildren, nil
@@ -1830,7 +2023,7 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 			}
 			if len(tokens) > 0 {
 				r.c.addVSpace(2)
-				_ = r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin)
+				_ = r.c.drawTokens(tokens, r.c.margin+10, r.c.w-r.c.margin, extensionAST.AlignLeft)
 				r.c.addVSpace(6)
 				r.c.drawBlockquoteBar(startY+2, r.c.cursorY-startY-2)
 			}
@@ -1887,7 +2080,7 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 			for _, part := range parts {
 				if part == "\n" {
 					if len(tokens) > 0 {
-						_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+						_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
 						tokens = nil
 						r.c.addVSpace(int(r.baseSize * 0.9))
 					}
@@ -1898,7 +2091,7 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 
 			if len(tokens) > 0 {
 				if nd.Type() == ast.TypeBlock {
-					_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin)
+					_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
 					r.c.addVSpace(int(r.baseSize * 0.9))
 				}
 			}
