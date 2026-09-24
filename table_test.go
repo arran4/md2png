@@ -14,6 +14,7 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 
 	opts := RenderOptions{
+		Margin: 10,
 		ImagePolicy: &policy,
 		Width: 800,
 	}
@@ -286,6 +287,7 @@ func TestTableMixedContent(t *testing.T) {
 
 	policy := DefaultCLIImagePolicy()
 	opts := RenderOptions{
+		Margin: 10,
 		ImagePolicy: &policy,
 		Width: 300,
 	}
@@ -305,19 +307,101 @@ func TestTableMixedContent(t *testing.T) {
 		t.Fatalf("Expected image")
 	}
 
-	// We will assert the image was rendered by verifying the total image height is much taller
-	// than an equivalent table without the image.
-	mdNoImg := []byte(`
-| Mixed Cell |
-| :--- |
-| Line 1<br>Line 3 |
-`)
-	resNoImg, err := RenderWithDiagnostics(mdNoImg, opts)
-	if err != nil {
-		t.Fatalf("Render failed: %v", err)
+	// We will assert the layout geometry explicitly. Line 1 should be above the image, and Line 3 below it.
+	img := res.Image
+	bounds := img.Bounds()
+
+	// Find top border
+	topBorderY := -1
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		r, g, b, _ := img.At(10, y).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			topBorderY = y
+			break
+		}
 	}
-	if res.Image.Bounds().Dy() <= resNoImg.Image.Bounds().Dy() + 50 {
-		t.Fatalf("Expected image with embedded image to be significantly taller than without. With img: %d, without: %d", res.Image.Bounds().Dy(), resNoImg.Image.Bounds().Dy())
+	if topBorderY == -1 {
+		t.Fatalf("Could not find table top border")
+	}
+
+	// Find vertical borders
+	var vBorders []int
+	for x := 10; x < bounds.Max.X; x++ {
+		r, g, b, _ := img.At(x, topBorderY+5).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			vBorders = append(vBorders, x)
+		}
+	}
+	if len(vBorders) < 2 {
+		t.Fatalf("Expected at least 2 vertical borders")
+	}
+
+	// Find the separator border
+	sepBorderY := -1
+	for y := topBorderY + 1; y < bounds.Max.Y; y++ {
+		r, g, b, _ := img.At(vBorders[0]+5, y).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			sepBorderY = y
+			break
+		}
+	}
+	if sepBorderY == -1 {
+		t.Fatalf("Could not find header separator border")
+	}
+
+	// Find bottom border
+	bottomBorderY := -1
+	for y := sepBorderY + 1; y < bounds.Max.Y; y++ {
+		r, g, b, _ := img.At(vBorders[0]+5, y).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			bottomBorderY = y
+			break
+		}
+	}
+	if bottomBorderY == -1 {
+		t.Fatalf("Could not find bottom border")
+	}
+
+	// Scan cell body from sepBorderY+1 to bottomBorderY-1 for content rows
+	var contentY []int
+	for y := sepBorderY + 1; y < bottomBorderY; y++ {
+		hasContent := false
+		for x := vBorders[0] + 1; x < vBorders[1]; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			// Image colors may be diverse, so anything not white is content
+			if r < 0xffff || g < 0xffff || b < 0xffff {
+				hasContent = true
+				break
+			}
+		}
+		if hasContent {
+			contentY = append(contentY, y)
+		}
+	}
+
+	type blob struct { min, max int }
+	var blobs []blob
+	if len(contentY) > 0 {
+		current := blob{min: contentY[0], max: contentY[0]}
+		for i := 1; i < len(contentY); i++ {
+			if contentY[i] <= current.max+3 {
+				current.max = contentY[i]
+			} else {
+				blobs = append(blobs, current)
+				current = blob{min: contentY[i], max: contentY[i]}
+			}
+		}
+		blobs = append(blobs, current)
+	}
+
+	if len(blobs) < 3 {
+		t.Fatalf("Expected at least 3 distinct vertical content blocks (Line1, Image, Line3), found %d", len(blobs))
+	}
+
+	// The image is the middle blob and should be significantly taller than a single text line
+	imgHeight := blobs[1].max - blobs[1].min
+	if imgHeight < 20 {
+		t.Fatalf("Expected image block to be taller than 20px, but it was %dpx", imgHeight)
 	}
 }
 
@@ -413,6 +497,16 @@ func TestTrailingSpaceAlignment(t *testing.T) {
 
 	if maxX == -1 {
 		t.Fatalf("No text found in trailing space alignment test")
+	}
+
+	// Ensure that no content breaches the right border (or gets drawn off canvas)
+	for y := sepBorderY + 1; y < sepBorderY+40; y++ {
+		for x := rightBorder + 1; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0xffff || g < 0xffff || b < 0xffff {
+				t.Fatalf("Content overflowed past the right border at (%d, %d)", x, y)
+			}
+		}
 	}
 
 	// Padding is ~9. Expect maxX to be very close to rightBorder - 9.
