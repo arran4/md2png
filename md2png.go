@@ -1229,13 +1229,19 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 
 		x := left
 		lineWidthForAlign := 0
+		trailingSpaces := 0
+		for i := len(line) - 1; i >= 0; i-- {
+			if strings.TrimSpace(line[i].text) == "" {
+				trailingSpaces++
+			} else {
+				break
+			}
+		}
 		for i, w := range line {
-			wWidth := int(math.Ceil(measureWidth(w.font, w.size, w.text)))
-			// Ignore trailing spaces for alignment purposes so they don't incorrectly shift right/center text leftward
-			if i == len(line)-1 && strings.TrimSpace(w.text) == "" {
+			if i >= len(line)-trailingSpaces {
 				continue
 			}
-			lineWidthForAlign += wWidth
+			lineWidthForAlign += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
 		}
 		if align == extensionAST.AlignCenter && lineWidthForAlign < (right-left) {
 			x = left + (right-left-lineWidthForAlign)/2

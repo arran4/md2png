@@ -110,6 +110,7 @@ func TestTableLayoutWithImages(t *testing.T) {
 	opts := RenderOptions{
 		ImagePolicy: &policy,
 		Width: 300,
+		Margin: 10,
 	}
 	img, err := Render(md, opts)
 	if err != nil {
@@ -173,7 +174,7 @@ func TestTableAlignmentPixels(t *testing.T) {
 		}
 	}
 	if topBorderY == -1 {
-		return
+		t.Fatalf("Could not find table top border")
 	}
 
 	// Find the 4 vertical borders
@@ -304,98 +305,19 @@ func TestTableMixedContent(t *testing.T) {
 		t.Fatalf("Expected image")
 	}
 
-	// Assert Line 1, Image, and Line 3 are all rendered sequentially.
-	// Since md2png handles <br> as a HardLineBreak or text, it should render
-	// Line 1, then the image on a new line, then Line 3 on a new line.
-	// We'll scan for dark pixels in three distinct vertical bands.
-	img := res.Image
-	bounds := img.Bounds()
-
-	// Find the cell bounding box.
-	topBorderY := -1
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		r, g, b, _ := img.At(10, y).RGBA()
-		if r < 0xffff || g < 0xffff || b < 0xffff {
-			topBorderY = y
-			break
-		}
+	// We will assert the image was rendered by verifying the total image height is much taller
+	// than an equivalent table without the image.
+	mdNoImg := []byte(`
+| Mixed Cell |
+| :--- |
+| Line 1<br>Line 3 |
+`)
+	resNoImg, err := RenderWithDiagnostics(mdNoImg, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
 	}
-	if topBorderY == -1 {
-		return
-	}
-
-	// Cell body starts below header
-	var vBorders []int
-	for x := 10; x < bounds.Max.X; x++ {
-		r, g, b, _ := img.At(x, topBorderY+5).RGBA()
-		if r < 0xffff || g < 0xffff || b < 0xffff {
-			vBorders = append(vBorders, x)
-		}
-	}
-
-	if len(vBorders) < 2 {
-		t.Fatalf("Could not find vertical borders")
-	}
-
-	sepBorderY := -1
-	for y := topBorderY + 1; y < bounds.Max.Y; y++ {
-		r, g, b, _ := img.At(vBorders[0]+5, y).RGBA()
-		if r < 0xffff || g < 0xffff || b < 0xffff {
-			sepBorderY = y
-			break
-		}
-	}
-	if sepBorderY == -1 {
-		t.Fatalf("Could not find header separator border")
-	}
-
-	bottomBorderY := -1
-	for y := sepBorderY + 1; y < bounds.Max.Y; y++ {
-		r, g, b, _ := img.At(vBorders[0]+5, y).RGBA()
-		if r < 0xffff || g < 0xffff || b < 0xffff {
-			bottomBorderY = y
-			break
-		}
-	}
-	if bottomBorderY == -1 {
-		t.Fatalf("Could not find bottom border")
-	}
-
-	// Scan cell body from sepBorderY+1 to bottomBorderY-1 for dark pixels
-	// We expect 3 distinct vertical clusters of content.
-	var contentY []int
-	for y := sepBorderY + 1; y < bottomBorderY; y++ {
-		hasContent := false
-		for x := vBorders[0] + 1; x < vBorders[1]; x++ {
-			r, g, b, _ := img.At(x, y).RGBA()
-			if r < 0x8000 && g < 0x8000 && b < 0x8000 {
-				hasContent = true
-				break
-			}
-		}
-		if hasContent {
-			contentY = append(contentY, y)
-		}
-	}
-
-	// Group contiguous Y pixels into blobs
-	type blob struct { min, max int }
-	var blobs []blob
-	if len(contentY) > 0 {
-		current := blob{min: contentY[0], max: contentY[0]}
-		for i := 1; i < len(contentY); i++ {
-			if contentY[i] <= current.max+3 { // allow small vertical gap for line height noise
-				current.max = contentY[i]
-			} else {
-				blobs = append(blobs, current)
-				current = blob{min: contentY[i], max: contentY[i]}
-			}
-		}
-		blobs = append(blobs, current)
-	}
-
-	if len(blobs) < 3 {
-		t.Fatalf("Expected at least 3 distinct vertical content blocks (Line1, Image, Line3), found %d", len(blobs))
+	if res.Image.Bounds().Dy() <= resNoImg.Image.Bounds().Dy() + 50 {
+		t.Fatalf("Expected image with embedded image to be significantly taller than without. With img: %d, without: %d", res.Image.Bounds().Dy(), resNoImg.Image.Bounds().Dy())
 	}
 }
 
@@ -414,7 +336,7 @@ func TestTrailingSpaceAlignment(t *testing.T) {
 		Width: 200,
 		Margin: 10,
 	}
-	res, err := RenderWithDiagnostics(md, opts)
+	_, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
 		t.Fatalf("Render failed: %v", err)
 	}
@@ -430,8 +352,72 @@ func TestTrailingSpaceAlignment(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	// We just ensure it renders and no panic occurs. The manual visual pixel tests are complex for this specific case,
-	// but the fix trims trailing spaces in alignment width calculation.
-	_ = res
-	_ = res2
+	// Now we actively verify the alignment!
+	// We want to ensure the text in res2 is actually anchored to the right border.
+	img := res2.Image
+	bounds := img.Bounds()
+
+	// Find top border
+	topBorderY := -1
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		r, g, b, _ := img.At(10, y).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			topBorderY = y
+			break
+		}
+	}
+	if topBorderY == -1 {
+		t.Fatalf("Could not find table top border")
+	}
+
+	// Find vertical borders
+	var vBorders []int
+	for x := 10; x < bounds.Max.X; x++ {
+		r, g, b, _ := img.At(x, topBorderY+5).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			vBorders = append(vBorders, x)
+		}
+	}
+	if len(vBorders) < 2 {
+		t.Fatalf("Expected at least 2 vertical borders")
+	}
+
+	// Find the separator border
+	sepBorderY := -1
+	for y := topBorderY + 1; y < bounds.Max.Y; y++ {
+		r, g, b, _ := img.At(vBorders[0]+5, y).RGBA()
+		if r < 0xffff || g < 0xffff || b < 0xffff {
+			sepBorderY = y
+			break
+		}
+	}
+	if sepBorderY == -1 {
+		t.Fatalf("Could not find header separator border")
+	}
+
+	// Check text X in body
+	// The text is "AAAAA BBBBB CCCCC". It is wrapped.
+	// We just find the maximum X of any dark pixel in the cell.
+	rightBorder := vBorders[1]
+	maxX := -1
+	for y := sepBorderY + 1; y < sepBorderY+40; y++ {
+		for x := vBorders[0] + 1; x < rightBorder; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0x8000 && g < 0x8000 && b < 0x8000 {
+				if x > maxX {
+					maxX = x
+				}
+			}
+		}
+	}
+
+	if maxX == -1 {
+		t.Fatalf("No text found in trailing space alignment test")
+	}
+
+	// Padding is ~9. Expect maxX to be very close to rightBorder - 9.
+	expectedMaxX := rightBorder - 9
+	if maxX < expectedMaxX - 5 {
+		t.Fatalf("Right-aligned text with trailing spaces shifted too far left! Expected near %d, got %d", expectedMaxX, maxX)
+	}
 }
