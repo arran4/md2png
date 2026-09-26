@@ -2,8 +2,12 @@ package md2png
 
 import (
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -310,6 +314,19 @@ func TestHTMLResourceNetworkAccess(t *testing.T) {
 	}
 }
 
+func createTestImage(t *testing.T, path string) {
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+	defer f.Close()
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	err = png.Encode(f, img)
+	if err != nil {
+		t.Fatalf("Failed to encode test image: %v", err)
+	}
+}
+
 func TestSuppressedHTML_CompleteCoverage(t *testing.T) {
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -318,40 +335,62 @@ func TestSuppressedHTML_CompleteCoverage(t *testing.T) {
 	}))
 	defer server.Close()
 
+	tempDir := t.TempDir()
+	localImagePath := filepath.Join(tempDir, "testimg.png")
+	createTestImage(t, localImagePath)
+	// File URLs for markdown
+	localImageURL := "file://" + localImagePath
+
 	tests := []struct {
-		name       string
-		md         string
-		expectDraw []string
-		expectNoDraw []string
-		expectReqs int32
+		name                 string
+		md                   string
+		expectDraw           []string
+		expectNoDraw         []string
+		expectReqs           int32
+		expectFootnotes      int
+		expectLocalImageDiag bool
 	}{
 		{
-			name: "Local file load check",
-			md: fmt.Sprintf("Before <script>![leak](%s)</script> After", "/nonexistent/local/file/which/would/fail/if/read/by/policy"),
-			expectDraw: []string{"Before ", " After"},
-			expectNoDraw: []string{"leak"},
-			expectReqs: 0,
+			name:                 "Local file load check",
+			md:                   fmt.Sprintf("Before <script>![leak](%s) [link](local_link)</script> After", localImageURL),
+			expectDraw:           []string{"Before ", " After"},
+			expectNoDraw:         []string{"leak", "link", "[1]", "[2]"},
+			expectReqs:           0,
+			expectFootnotes:      0,
+			expectLocalImageDiag: false,
 		},
 		{
-			name: "Script context leak check",
-			md: fmt.Sprintf("Before <script>![leak](%s/img1.png) [leak](%s/link1)</script> After", server.URL, server.URL),
-			expectDraw: []string{"Before ", " After"},
-			expectNoDraw: []string{"leak", "img1", "link1"},
-			expectReqs: 0,
+			name:                 "Positive local file load",
+			md:                   fmt.Sprintf("Before ![valid](%s) [valid](local_link) After", localImageURL),
+			expectDraw:           []string{"Before ", " After", "valid"},
+			expectNoDraw:         []string{"leak"},
+			expectReqs:           0, // local load
+			expectFootnotes:      2,
+			expectLocalImageDiag: false, // Should succeed
 		},
 		{
-			name: "Style context leak check",
-			md: fmt.Sprintf("Before <style>![leak](%s/img2.png) [leak](%s/link2)</style> After", server.URL, server.URL),
-			expectDraw: []string{"Before ", " After"},
-			expectNoDraw: []string{"leak", "img2", "link2"},
-			expectReqs: 0,
+			name:            "Script context leak check",
+			md:              fmt.Sprintf("Before <script>![leak](%s/img1.png) [leak](%s/link1)</script> After", server.URL, server.URL),
+			expectDraw:      []string{"Before ", " After"},
+			expectNoDraw:    []string{"leak", "img1", "link1", "[1]", "[2]"},
+			expectReqs:      0,
+			expectFootnotes: 0,
 		},
 		{
-			name: "Positive control outside suppressed tag",
-			md: fmt.Sprintf("Before ![valid](%s/valid.png) [valid](%s/validlink) After", server.URL, server.URL),
-			expectDraw: []string{"Before ", " After", "valid"},
-			expectNoDraw: []string{"leak"},
-			expectReqs: 1, // The image request
+			name:            "Style context leak check",
+			md:              fmt.Sprintf("Before <style>![leak](%s/img2.png) [leak](%s/link2)</style> After", server.URL, server.URL),
+			expectDraw:      []string{"Before ", " After"},
+			expectNoDraw:    []string{"leak", "img2", "link2", "[1]", "[2]"},
+			expectReqs:      0,
+			expectFootnotes: 0,
+		},
+		{
+			name:            "Positive control outside suppressed tag",
+			md:              fmt.Sprintf("Before ![valid](%s/valid.png) [valid](%s/validlink) After", server.URL, server.URL),
+			expectDraw:      []string{"Before ", " After", "valid"},
+			expectNoDraw:    []string{"leak"},
+			expectReqs:      1, // The image request
+			expectFootnotes: 2,
 		},
 	}
 
@@ -359,33 +398,72 @@ func TestSuppressedHTML_CompleteCoverage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			atomic.StoreInt32(&requestCount, 0)
 
-			opts := RenderOptions{
-				ImagePolicy: &ImagePolicy{
-					AllowRemote: true,
-					HTTPClient:  server.Client(),
-				},
+			mdParser := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()))
+			doc := mdParser.Parser().Parse(text.NewReader([]byte(tt.md)))
+			paragraph, ok := doc.FirstChild().(*ast.Paragraph)
+			if !ok {
+				t.Fatalf("expected paragraph, got %T", doc.FirstChild())
 			}
-			res, err := RenderWithDiagnostics([]byte(tt.md), opts)
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
+
+			opts := RenderOptions{}
+			_ = normalizeRenderOptions(&opts)
+
+			policy := DefaultCLIImagePolicy()
+			policy.AllowRemote = true
+			policy.HTTPClient = server.Client()
+			policy.AllowLocal = true
+			policy.SandboxLocal = false // to load temp file easily
+
+			c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
+
+			r := &renderer{
+				c:              c,
+				baseSize:       opts.BaseFontSize,
+				linkFootnotes:  true,
+				imageFootnotes: true,
+				imagePolicy:    policy,
 			}
-			if res.Image == nil {
-				t.Fatalf("Expected an image result")
-			}
+			r.ensureImageResolvers()
+
+			var tokens []textToken
+			r.collectInlineTokens(paragraph, []byte(tt.md), opts.Fonts.Regular, opts.BaseFontSize, opts.Theme.FG, &tokens)
 
 			if atomic.LoadInt32(&requestCount) != tt.expectReqs {
 				t.Fatalf("Expected %d requests, got %d", tt.expectReqs, requestCount)
 			}
 
-			// We verify the drawable output by extracting text using same trick as safeHTML
-			r := &renderer{}
-			extracted := r.safeExtractHTMLText([]byte(tt.md))
-			joined := strings.Join(extracted, "")
+			var got strings.Builder
+			for _, token := range tokens {
+				if token.text != "" {
+					got.WriteString(token.text)
+				}
+			}
+			joined := got.String()
 
 			for _, avoid := range tt.expectNoDraw {
 				if strings.Contains(joined, avoid) {
 					t.Fatalf("Output text incorrectly contains suppressed content %q", avoid)
 				}
+			}
+
+			for _, require := range tt.expectDraw {
+				if !strings.Contains(joined, require) {
+					t.Fatalf("Output text missing required content %q, got: %q", require, joined)
+				}
+			}
+
+			if len(r.footnotes) != tt.expectFootnotes {
+				t.Fatalf("Expected %d footnotes, got %d: %v", tt.expectFootnotes, len(r.footnotes), r.footnotes)
+			}
+
+			hasLocalDiag := false
+			for _, diag := range r.diagnostics {
+				if diag.Code == DiagImageLoadFailed && strings.Contains(diag.Destination, localImagePath) {
+					hasLocalDiag = true
+				}
+			}
+			if hasLocalDiag != tt.expectLocalImageDiag {
+				t.Fatalf("Expected local image diagnostic to be %v, got %v", tt.expectLocalImageDiag, hasLocalDiag)
 			}
 		})
 	}
