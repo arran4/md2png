@@ -966,13 +966,15 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 		font = r.c.fonts.Regular
 	}
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
+			if _, ok := child.(*ast.RawHTML); !ok {
+				continue
+			}
+		}
 		switch c := child.(type) {
 		case *ast.Text:
 			// Goldmark represents inline script/style bodies as Text nodes between
 			// separate opening and closing RawHTML nodes.
-			if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
-				continue
-			}
 			text := string(c.Segment.Value(md))
 			if text != "" {
 				parts := strings.Split(text, "\n")
