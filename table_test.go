@@ -14,9 +14,9 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 
 	opts := RenderOptions{
-		Margin:      10,
+		Margin: 10,
 		ImagePolicy: &policy,
-		Width:       800,
+		Width: 800,
 	}
 	img, err := Render(md, opts)
 	if err != nil {
@@ -28,8 +28,8 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 
 	opts = RenderOptions{
 		ImagePolicy: &policy,
-		Width:       250,
-		Margin:      10,
+		Width: 250,
+		Margin: 10,
 	}
 	img2, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 	// Test impossible layout (too narrow to fit borders + 1 char)
 	opts = RenderOptions{
 		ImagePolicy: &policy,
-		Width:       100, Margin: 10,
+		Width: 100, Margin: 10,
 	}
 	res, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestTableAlignmentsAndNarrowWidth(t *testing.T) {
 	// Test strict mode error on impossible layout
 	strictOpts := RenderOptions{
 		ImagePolicy: &policy,
-		Width:       100, Margin: 10,
+		Width: 100, Margin: 10,
 		DiagnosticPolicy: &DiagnosticPolicy{
 			FailOnUnsupported: true,
 		},
@@ -110,8 +110,8 @@ func TestTableLayoutWithImages(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 	opts := RenderOptions{
 		ImagePolicy: &policy,
-		Width:       300,
-		Margin:      10,
+		Width: 300,
+		Margin: 10,
 	}
 	img, err := Render(md, opts)
 	if err != nil {
@@ -146,8 +146,8 @@ func TestTableAlignmentPixels(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 	opts := RenderOptions{
 		ImagePolicy: &policy,
-		Width:       500,
-		Margin:      10,
+		Width: 500,
+		Margin: 10,
 	}
 	res, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
@@ -257,18 +257,18 @@ func TestTableAlignmentPixels(t *testing.T) {
 		}
 
 		expectedLeft := col0Min + 9
-		if lxMin > expectedLeft+5 {
+		if lxMin > expectedLeft + 5 {
 			t.Errorf("[%s] Left aligned text is too far right: %d (expected ~%d)", rowName, lxMin, expectedLeft)
 		}
 
 		cellCenter := (col1Min + col1Max) / 2
 		textCenter := (cxMin + cxMax) / 2
-		if textCenter < cellCenter-5 || textCenter > cellCenter+5 {
+		if textCenter < cellCenter - 5 || textCenter > cellCenter + 5 {
 			t.Errorf("[%s] Center aligned text is not centered: textCenter=%d vs cellCenter=%d", rowName, textCenter, cellCenter)
 		}
 
 		expectedRight := col2Max - 9
-		if rxMax < expectedRight-5 {
+		if rxMax < expectedRight - 5 {
 			t.Errorf("[%s] Right aligned text is too far left: %d (expected ~%d)", rowName, rxMax, expectedRight)
 		}
 	}
@@ -287,9 +287,9 @@ func TestTableMixedContent(t *testing.T) {
 
 	policy := DefaultCLIImagePolicy()
 	opts := RenderOptions{
-		Margin:      10,
+		Margin: 10,
 		ImagePolicy: &policy,
-		Width:       300,
+		Width: 300,
 	}
 	res, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
@@ -379,7 +379,7 @@ func TestTableMixedContent(t *testing.T) {
 		}
 	}
 
-	type blob struct{ min, max int }
+	type blob struct { min, max int }
 	var blobs []blob
 	if len(contentY) > 0 {
 		current := blob{min: contentY[0], max: contentY[0]}
@@ -417,8 +417,8 @@ func TestTrailingSpaceAlignment(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 	opts := RenderOptions{
 		ImagePolicy: &policy,
-		Width:       200,
-		Margin:      10,
+		Width: 200,
+		Margin: 10,
 	}
 	_, err := RenderWithDiagnostics(md, opts)
 	if err != nil {
@@ -511,7 +511,7 @@ func TestTrailingSpaceAlignment(t *testing.T) {
 
 	// Padding is ~9. Expect maxX to be very close to rightBorder - 9.
 	expectedMaxX := rightBorder - 9
-	if maxX < expectedMaxX-5 {
+	if maxX < expectedMaxX - 5 {
 		t.Fatalf("Right-aligned text with trailing spaces shifted too far left! Expected near %d, got %d", expectedMaxX, maxX)
 	}
 }

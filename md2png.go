@@ -48,15 +48,15 @@ import (
 // Not a full HTML renderer; keep expectations practical.
 
 var (
-	ErrInvalidWidth          = errors.New("md2png: invalid width")
-	ErrInvalidMargin         = errors.New("md2png: invalid margin")
-	ErrInvalidFontSize       = errors.New("md2png: invalid font size")
-	ErrInvalidMaxHeight      = errors.New("md2png: invalid max height")
-	ErrNoDrawableWidth       = errors.New("md2png: margin leaves no useful drawable width")
+	ErrInvalidWidth     = errors.New("md2png: invalid width")
+	ErrInvalidMargin    = errors.New("md2png: invalid margin")
+	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
+	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
+	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
 	ErrImpossibleTableLayout = errors.New("md2png: table minimum width exceeds available canvas width")
-	ErrResourceLimit         = errors.New("md2png: dimension exceeds resource limit")
-	ErrPolicyDenied          = errors.New("md2png: image loading denied by policy")
-	ErrSandboxViolation      = errors.New("md2png: path violates sandbox restrictions")
+	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
+	ErrPolicyDenied     = errors.New("md2png: image loading denied by policy")
+	ErrSandboxViolation = errors.New("md2png: path violates sandbox restrictions")
 )
 
 const (
@@ -1292,7 +1292,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			drawHeight := bounds.Dy()
 			x := left
 			if (tok.center || align == extensionAST.AlignCenter) && maxWidthInt > drawWidth {
-				x = left + (maxWidthInt-drawWidth)/2
+				x = left + (maxWidthInt - drawWidth) / 2
 			} else if align == extensionAST.AlignRight && maxWidthInt > drawWidth {
 				x = left + maxWidthInt - drawWidth
 			}
@@ -1528,6 +1528,7 @@ func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHead
 	}
 	return cells
 }
+
 
 func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 	if len(tokens) == 0 {
