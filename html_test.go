@@ -319,7 +319,11 @@ func createTestImage(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("Failed to create test image: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			t.Errorf("Failed to close file: %v", closeErr)
+		}
+	}()
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	err = png.Encode(f, img)
 	if err != nil {
