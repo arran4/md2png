@@ -9,17 +9,18 @@ Subcommands:
 
 
 Flags:
-    --in *string              (default: stdin)   flag: Input Markdown file ( if empty)
-    --width *int              (default: stdin)   flag: Output image width in pixels (0 for default)
-    --margin *int                                flag: Margin in pixels (0 for default)
-    --pt *float64                                flag: Base font size in points (paragraph) (0 for default)
-    --theme *string           (default: light)   flag: Theme: light|dark
-    --font *string            (default: light)   flag: Path to TTF for regular text (optional; default Go Regular)
-    --fontbold *string                           flag: Path to TTF for bold text (optional; default Go Bold)
-    --fontmono *string                           flag: Path to TTF for mono/code (optional; default Go Mono)
-    --footnote-links *bool    (default: true)    flag: Add footnotes for link destinations
-    --footnote-images *bool   (default: false)   flag: Add footnotes for image destinations
-    --max-height *int         (default: false)   flag: Maximum output height in pixels (0 for default)
+    --in *string               (default: stdin)   flag: Input Markdown file ( if empty)
+    --width *int               (default: stdin)   flag: Output image width in pixels (0 for default)
+    --margin *int                                 flag: Margin in pixels (0 for default)
+    --pt *float64                                 flag: Base font size in points (paragraph) (0 for default)
+    --theme *string            (default: light)   flag: Theme: light|dark
+    --font *string             (default: light)   flag: Path to TTF for regular text (optional; default Go Regular)
+    --fontbold *string                            flag: Path to TTF for bold text (optional; default Go Bold)
+    --fontmono *string                            flag: Path to TTF for mono/code (optional; default Go Mono)
+    --footnote-links *bool     (default: true)    flag: Add footnotes for link destinations
+    --footnote-images *bool    (default: false)   flag: Add footnotes for image destinations
+    --max-height *int          (default: false)   flag: Maximum output height in pixels (0 for default)
+    --table-fit-width *bool                       flag: Expand canvas width to fit tables
 
 Positional Arguments:
-    [args...]  flag: Maximum output height in pixels (0 for default)
+    [args...]  flag: Expand canvas width to fit tables

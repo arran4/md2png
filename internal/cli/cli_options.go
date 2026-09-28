@@ -18,6 +18,7 @@ func ConvertCommandArgsToRenderOptions(
 	footnoteLinks *bool,
 	footnoteImages *bool,
 	maxHeight *int,
+	tableFitWidth *bool,
 	baseDir string,
 ) (md2png.RenderOptions, error) {
 	themeName := "light"
@@ -90,6 +91,9 @@ func ConvertCommandArgsToRenderOptions(
 	}
 	if maxHeight != nil {
 		opts.MaxHeight = *maxHeight
+	}
+	if tableFitWidth != nil {
+		opts.TableFitWidth = *tableFitWidth
 	}
 
 	return opts, nil

@@ -44,6 +44,7 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "--format")
 	args = append(args, "test")
 	args = append(args, "--strict")
+	args = append(args, "--table-fit-width")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -122,6 +123,11 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected strict to be non-nil")
 	} else if *cmd.strict != true {
 		t.Errorf("Expected strict to be true, got '%v'", *cmd.strict)
+	}
+	if cmd.tableFitWidth == nil {
+		t.Errorf("Expected tableFitWidth to be non-nil")
+	} else if *cmd.tableFitWidth != true {
+		t.Errorf("Expected tableFitWidth to be true, got '%v'", *cmd.tableFitWidth)
 	}
 
 }

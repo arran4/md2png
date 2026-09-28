@@ -25,6 +25,7 @@ func Md2png(
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
 	format *string, // flag: --format Output format: png, jpeg, or gif
 	strict *bool, // flag: --strict Enable strict rendering (fail on warnings)
+	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
 ) error {
 	var data []byte
 	var baseDir string
@@ -65,7 +66,7 @@ func Md2png(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, baseDir)
 	if err != nil {
 		return err
 	}

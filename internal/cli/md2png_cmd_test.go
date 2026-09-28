@@ -128,7 +128,7 @@ func TestMd2png_Integration(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			outPath := filepath.Join(tempDir, tc.outName)
-			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil)
+			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Md2png() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -184,7 +184,7 @@ func TestMd2png_StdoutFormats(t *testing.T) {
 		t.Run(tc.format, func(t *testing.T) {
 			outArg := "-"
 			output, err := captureStdout(t, func() error {
-				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil)
+				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil, nil)
 			})
 			if err != nil {
 				t.Fatalf("Md2png() error = %v", err)
@@ -209,7 +209,7 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil)
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil, nil)
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -333,7 +333,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 
 	outArg := "-"
 	output, err := captureStdout(t, func() error {
-		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil)
+		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil, nil)
 	})
 	if err != nil {
 		t.Fatalf("Md2png() error = %v", err)
@@ -350,7 +350,7 @@ func TestMd2pngStrict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true))
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true), nil)
 	if err == nil {
 		t.Fatal("Expected error with strict mode, got nil")
 	}
@@ -367,7 +367,7 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 
 	outPath := "-"
 	outBytes, errBytes, err := captureStdoutStderr(t, func() error {
-		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false), nil)
 	})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -385,7 +385,7 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 
 	// Strict failure produces no stdout image but retains a diagnostic on stderr.
 	outBytesStrict, errBytesStrict, errStrict := captureStdoutStderr(t, func() error {
-		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true), nil)
 	})
 	if errStrict == nil {
 		t.Fatalf("Expected error in strict mode")

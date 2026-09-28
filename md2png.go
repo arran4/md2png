@@ -48,15 +48,15 @@ import (
 // Not a full HTML renderer; keep expectations practical.
 
 var (
-	ErrInvalidWidth     = errors.New("md2png: invalid width")
-	ErrInvalidMargin    = errors.New("md2png: invalid margin")
-	ErrInvalidFontSize  = errors.New("md2png: invalid font size")
-	ErrInvalidMaxHeight = errors.New("md2png: invalid max height")
-	ErrNoDrawableWidth  = errors.New("md2png: margin leaves no useful drawable width")
+	ErrInvalidWidth          = errors.New("md2png: invalid width")
+	ErrInvalidMargin         = errors.New("md2png: invalid margin")
+	ErrInvalidFontSize       = errors.New("md2png: invalid font size")
+	ErrInvalidMaxHeight      = errors.New("md2png: invalid max height")
+	ErrNoDrawableWidth       = errors.New("md2png: margin leaves no useful drawable width")
 	ErrImpossibleTableLayout = errors.New("md2png: table minimum width exceeds available canvas width")
-	ErrResourceLimit    = errors.New("md2png: dimension exceeds resource limit")
-	ErrPolicyDenied     = errors.New("md2png: image loading denied by policy")
-	ErrSandboxViolation = errors.New("md2png: path violates sandbox restrictions")
+	ErrResourceLimit         = errors.New("md2png: dimension exceeds resource limit")
+	ErrPolicyDenied          = errors.New("md2png: image loading denied by policy")
+	ErrSandboxViolation      = errors.New("md2png: path violates sandbox restrictions")
 )
 
 const (
@@ -526,6 +526,12 @@ type renderer struct {
 	diagnostics    []Diagnostic
 	renderErr      error
 	htmlState      htmlExtractionState
+	imageMemo      map[string]*memoizedImage
+}
+
+type memoizedImage struct {
+	img image.Image
+	err error
 }
 
 type imageResolver func(dest string) (cacheKey string, loader func() (image.Image, error), err error)
@@ -697,15 +703,25 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 	if cacheKey == "" {
 		cacheKey = dest
 	}
+	if r.imageMemo != nil {
+		if memo, ok := r.imageMemo[cacheKey]; ok {
+			return memo.img, memo.err
+		}
+	}
+
 	if r.imageCache != nil {
 		if img, ok := r.imageCache[cacheKey]; ok {
 			return img, nil
 		}
 	}
+
 	if loader == nil {
 		return nil, fmt.Errorf("md2png: resolver for %q returned nil loader", dest)
 	}
 	img, err := loader()
+	if r.imageMemo != nil {
+		r.imageMemo[cacheKey] = &memoizedImage{img: img, err: err}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1292,7 +1308,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			drawHeight := bounds.Dy()
 			x := left
 			if (tok.center || align == extensionAST.AlignCenter) && maxWidthInt > drawWidth {
-				x = left + (maxWidthInt - drawWidth) / 2
+				x = left + (maxWidthInt-drawWidth)/2
 			} else if align == extensionAST.AlignRight && maxWidthInt > drawWidth {
 				x = left + maxWidthInt - drawWidth
 			}
@@ -1529,7 +1545,6 @@ func (r *renderer) collectTableRow(row *extensionAST.TableRow, md []byte, isHead
 	return cells
 }
 
-
 func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 	if len(tokens) == 0 {
 		return 0, 0
@@ -1584,6 +1599,81 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 	flushLine()
 
 	return minWidth, maxWidth
+}
+
+func (r *renderer) measureTableMinWidth(tbl *extensionAST.Table, md []byte) int {
+	if r.renderErr != nil {
+		return 0
+	}
+	var rows [][]tableCell
+	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
+		if r.renderErr != nil {
+			return 0
+		}
+		switch n := node.(type) {
+		case *extensionAST.TableHeader:
+			var cells []tableCell
+			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if r.renderErr != nil {
+					return 0
+				}
+				if tc, ok := cell.(*extensionAST.TableCell); ok {
+					var tokens []textToken
+					font := r.c.fonts.Regular
+					if r.c.fonts.Bold != nil {
+						font = r.c.fonts.Bold
+					}
+					r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
+					if r.renderErr != nil {
+						return 0
+					}
+					cells = append(cells, tableCell{tokens: tokens, align: tc.Alignment})
+				}
+			}
+			rows = append(rows, cells)
+		case *extensionAST.TableRow:
+			rows = append(rows, r.collectTableRow(n, md, false))
+		}
+	}
+	if len(rows) == 0 {
+		return 0
+	}
+	colCount := 0
+	for _, row := range rows {
+		if len(row) > colCount {
+			colCount = len(row)
+		}
+	}
+	if colCount == 0 {
+		return 0
+	}
+
+	border := 1
+	cellPadding := int(r.baseSize * 0.6)
+	if cellPadding < 8 {
+		cellPadding = 8
+	}
+
+	colMinWidths := make([]int, colCount)
+	for col := 0; col < colCount; col++ {
+		minW := 20
+		for _, row := range rows {
+			if col < len(row) {
+				cMin, _ := measureCellBounds(r.c, row[col].tokens)
+				if cMin > minW {
+					minW = cMin
+				}
+			}
+		}
+		colMinWidths[col] = minW + 2*cellPadding
+	}
+
+	totalMinWidth := border * (colCount + 1)
+	for col := 0; col < colCount; col++ {
+		totalMinWidth += colMinWidths[col]
+	}
+
+	return totalMinWidth + (2 * r.c.margin)
 }
 
 func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
@@ -1944,13 +2034,58 @@ func (r *renderer) drawFootnotes() {
 	}
 }
 
-func (r *renderer) render(md []byte) error {
-	mdParser := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
-	)
-	doc := mdParser.Parser().Parse(text.NewReader(md))
-	return r.renderDocument(md, doc)
+func (r *renderer) measureTableFitWidth(md []byte, doc ast.Node) (int, error) {
+	maxWidth := r.c.w
+	oldState := r.htmlState
+	oldErr := r.renderErr
+	oldDiags := r.diagnostics
+	oldFootnoteIdx := r.footnoteIndex
+	oldFootnotes := r.footnotes
+
+	r.renderErr = nil
+
+	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if r.renderErr != nil {
+			return ast.WalkStop, r.renderErr
+		}
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if tbl, ok := n.(*extensionAST.Table); ok {
+			// Ensure we don't accidentally load suppressed images during preflight.
+			if r.htmlState.suppressedTag == "" && !r.htmlState.inComment {
+				w := r.measureTableMinWidth(tbl, md)
+				if w > maxWidth {
+					maxWidth = w
+				}
+			}
+		} else if htmlBlock, ok := n.(*ast.HTMLBlock); ok {
+			htmlContent := ""
+			lines := htmlBlock.Lines()
+			for i := 0; i < lines.Len(); i++ {
+				seg := lines.At(i)
+				htmlContent += string(seg.Value(md))
+			}
+			_ = extractHTMLText([]byte(htmlContent), &r.htmlState)
+		} else if rawHTML, ok := n.(*ast.RawHTML); ok {
+			// To respect #126 we also need to keep track of script/style blocks correctly
+			htmlContent := ""
+			segments := rawHTML.Segments
+			for i := 0; i < segments.Len(); i++ {
+				seg := segments.At(i)
+				htmlContent += string(seg.Value(md))
+			}
+			_ = extractHTMLText([]byte(htmlContent), &r.htmlState)
+		}
+		return ast.WalkContinue, nil
+	})
+
+	r.htmlState = oldState
+	r.renderErr = oldErr
+	r.diagnostics = oldDiags
+	r.footnoteIndex = oldFootnoteIdx
+	r.footnotes = oldFootnotes
+	return maxWidth, err
 }
 
 // renderDocument contains the shared AST traversal. Keeping it separate from
@@ -2209,6 +2344,7 @@ type RenderOptions struct {
 	ImageFootnotes   *bool             // Add footnotes for images. Defaults to false.
 	BaseDir          string            // Base directory for resolving local image paths.
 	MaxHeight        int               // Maximum permitted output height (default 32768) to prevent OOM.
+	TableFitWidth    bool              // Expand canvas width to fit tables
 	ImagePolicy      *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
 	DiagnosticPolicy *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
 }
@@ -2413,21 +2549,44 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 		baseDir:        opts.BaseDir,
 		imagePolicy:    *opts.ImagePolicy,
 		diagPolicy:     *opts.DiagnosticPolicy,
+		imageMemo:      make(map[string]*memoizedImage),
 	}
 	r.ensureImageResolvers()
-	if err := r.render(data); err != nil {
+
+	mdParser := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	)
+	doc := mdParser.Parser().Parse(text.NewReader(data))
+
+	if opts.TableFitWidth {
+		fitWidth, err := r.measureTableFitWidth(data, doc)
+		if err != nil {
+			return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
+		}
+		if fitWidth > opts.Width {
+			if fitWidth > MaxAllowedWidth {
+				return RenderResult{Image: nil, Diagnostics: r.diagnostics}, ErrResourceLimit
+			}
+			opts.Width = fitWidth
+			// recreate canvas for new width
+			r.c = newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
+		}
+	}
+
+	if err := r.renderDocument(data, doc); err != nil {
 		return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
 	}
 
-	used := c.cursorY + opts.Margin
+	used := r.c.cursorY + opts.Margin
 	if used < opts.Margin+50 {
 		used = opts.Margin + 50
 	}
 
-	c.ensureHeightAbs(used)
+	r.c.ensureHeightAbs(used)
 
 	img := image.NewRGBA(image.Rect(0, 0, opts.Width, used))
-	draw.Draw(img, img.Bounds(), c.img, image.Point{}, draw.Src)
+	draw.Draw(img, img.Bounds(), r.c.img, image.Point{}, draw.Src)
 	return RenderResult{Image: img, Diagnostics: r.diagnostics}, nil
 }
 

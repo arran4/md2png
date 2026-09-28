@@ -23,3 +23,4 @@ Flags:
     --max-height *int         (default: false)     flag: Maximum output height in pixels (0 for default)
     --format *string                               flag: Output format: png, jpeg, or gif
     --strict *bool                                 flag: Enable strict rendering (fail on warnings)
+    --table-fit-width *bool                        flag: Expand canvas width to fit tables

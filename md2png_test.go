@@ -14,6 +14,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
 type mockTransport func(*http.Request) (*http.Response, error)
@@ -131,7 +136,12 @@ func TestRendererFootnoteCollection(t *testing.T) {
 	}
 	r.ensureImageResolvers()
 	markdown := []byte("First [link](https://example.com) and second [same](https://example.com) ![img](https://example.com/image.png)")
-	if err := r.render(markdown); err != nil {
+	mdParser := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	)
+	doc := mdParser.Parser().Parse(text.NewReader(markdown))
+	if err := r.renderDocument(markdown, doc); err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 	if len(r.footnotes) != 2 {
@@ -169,7 +179,12 @@ func TestRendererFootnoteToggles(t *testing.T) {
 	}
 	r.ensureImageResolvers()
 	markdown := []byte("[link](https://example.com) ![img](https://example.com/image.png)")
-	if err := r.render(markdown); err != nil {
+	mdParser := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	)
+	doc := mdParser.Parser().Parse(text.NewReader(markdown))
+	if err := r.renderDocument(markdown, doc); err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 	if len(r.footnotes) != 1 {

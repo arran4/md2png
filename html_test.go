@@ -472,3 +472,37 @@ func TestSuppressedHTML_CompleteCoverage(t *testing.T) {
 		})
 	}
 }
+
+func TestTableFitWidthHTMLSuppression(t *testing.T) {
+	policy := DefaultCLIImagePolicy()
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "image/png")
+		png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10)))
+	}))
+	defer ts.Close()
+
+	md := []byte(fmt.Sprintf(`
+<script>
+| A | B |
+|---|---|
+| ![img](%s) |
+</script>
+`, ts.URL))
+
+	opts := RenderOptions{
+		Width:         200,
+		TableFitWidth: true,
+		ImagePolicy:   &policy,
+	}
+
+	_, err := RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	if requestCount != 0 {
+		t.Fatalf("Expected exactly 0 requests to image server for suppressed table image, got %d", requestCount)
+	}
+}
