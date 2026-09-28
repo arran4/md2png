@@ -534,7 +534,7 @@ func TestTableFitWidth(t *testing.T) {
 
 		img := image.NewRGBA(image.Rect(0, 0, 100, 100))
 		w.Header().Set("Content-Type", "image/png")
-		png.Encode(w, img)
+		_ = png.Encode(w, img)
 	}))
 	defer ts.Close()
 

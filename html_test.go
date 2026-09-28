@@ -479,7 +479,7 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		w.Header().Set("Content-Type", "image/png")
-		png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10)))
+		_ = png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10)))
 	}))
 	defer ts.Close()
 
