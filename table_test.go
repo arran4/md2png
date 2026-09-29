@@ -602,3 +602,57 @@ Some normal text that wraps to the requested width.
 		t.Fatalf("Expected table layout impossible error when TableFitWidth is false, got: %v", err)
 	}
 }
+
+func TestTableFitWidthFailedImageMemo(t *testing.T) {
+	policy := DefaultCLIImagePolicy()
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount > 1 {
+			t.Fatalf("Failed image requested more than once!")
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	md := []byte(fmt.Sprintf(`
+| C1 | C2 |
+| -- | -- |
+| ![failed-img](%s) | Row 1 Col 2 |
+`, ts.URL))
+
+	opts := RenderOptions{
+		Width:         200,
+		TableFitWidth: true,
+		ImagePolicy:   &policy,
+	}
+
+	res, err := RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	foundDiag := false
+	for _, diag := range res.Diagnostics {
+		if diag.Code == DiagnosticCode("image_load_failed") {
+			foundDiag = true
+		}
+	}
+	if !foundDiag {
+		t.Fatalf("Expected image_load_failed diagnostic for missing image")
+	}
+	if requestCount != 1 {
+		t.Fatalf("Expected exactly 1 request for failed image, got %d", requestCount)
+	}
+
+	// Test strict mode
+	requestCount = 0
+	opts.DiagnosticPolicy = &DiagnosticPolicy{FailOnImageError: true}
+	_, err = RenderWithDiagnostics(md, opts)
+	if err == nil {
+		t.Fatalf("Expected strict error for failed image")
+	}
+	if requestCount != 1 {
+		t.Fatalf("Expected exactly 1 request for failed image in strict mode, got %d", requestCount)
+	}
+}

@@ -2037,11 +2037,20 @@ func (r *renderer) drawFootnotes() {
 func (r *renderer) measureTableFitWidth(md []byte, doc ast.Node) (int, error) {
 	maxWidth := r.c.w
 	oldState := r.htmlState
-	oldErr := r.renderErr
-	oldDiags := r.diagnostics
-	oldFootnoteIdx := r.footnoteIndex
-	oldFootnotes := r.footnotes
+	oldMemo := r.imageMemo
 
+	r.imageMemo = make(map[string]*memoizedImage)
+
+	oldDiagPolicy := r.diagPolicy
+	r.diagPolicy = DiagnosticPolicy{}
+
+	oldFootnotes := r.footnotes
+	r.footnotes = nil
+	oldFootnoteIdx := r.footnoteIndex
+	r.footnoteIndex = make(map[string]int)
+
+	oldDiags := r.diagnostics
+	r.diagnostics = nil
 	r.renderErr = nil
 
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -2081,10 +2090,16 @@ func (r *renderer) measureTableFitWidth(md []byte, doc ast.Node) (int, error) {
 	})
 
 	r.htmlState = oldState
-	r.renderErr = oldErr
-	r.diagnostics = oldDiags
-	r.footnoteIndex = oldFootnoteIdx
+	r.diagPolicy = oldDiagPolicy
 	r.footnotes = oldFootnotes
+	r.footnoteIndex = oldFootnoteIdx
+	r.diagnostics = oldDiags
+	r.renderErr = nil
+
+	for k, v := range r.imageMemo {
+		oldMemo[k] = v
+	}
+	r.imageMemo = oldMemo
 	return maxWidth, err
 }
 
@@ -2549,7 +2564,6 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 		baseDir:        opts.BaseDir,
 		imagePolicy:    *opts.ImagePolicy,
 		diagPolicy:     *opts.DiagnosticPolicy,
-		imageMemo:      make(map[string]*memoizedImage),
 	}
 	r.ensureImageResolvers()
 
@@ -2560,6 +2574,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	doc := mdParser.Parser().Parse(text.NewReader(data))
 
 	if opts.TableFitWidth {
+		r.imageMemo = make(map[string]*memoizedImage)
 		fitWidth, err := r.measureTableFitWidth(data, doc)
 		if err != nil {
 			return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
