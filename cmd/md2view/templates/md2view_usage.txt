@@ -23,4 +23,4 @@ Flags:
     --table-fit-width *bool                       flag: Expand canvas width to fit tables
 
 Positional Arguments:
-    [args...]  flag: Expand canvas width to fit tables
+    [args...]  arg: [args]

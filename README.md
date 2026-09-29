@@ -59,6 +59,7 @@ Requires Go 1.22 or newer.
 | `--footnote-links` | Emit link targets as numbered footnotes | `true` |
 | `--footnote-images` | Emit image targets as numbered footnotes | `false` |
 | `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
+| `--table-fit-width` | Expand canvas width to fit tables | `false` |
 | `--strict` | Fail when rendering emits a warning diagnostic | `false` |
 
 ### Examples

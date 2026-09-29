@@ -35,7 +35,7 @@ func Md2view(
 	footnoteImages *bool, // flag: --footnote-images Add footnotes for image destinations (default: false)
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
-	args ...string,
+	args ...string, // arg: [args]
 ) error {
 	var err error
 	var data []byte

@@ -479,7 +479,9 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		w.Header().Set("Content-Type", "image/png")
-		_ = png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10)))
+		if err := png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10))); err != nil {
+			t.Errorf("Failed to encode PNG: %v", err)
+		}
 	}))
 	defer ts.Close()
 
