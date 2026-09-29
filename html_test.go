@@ -486,12 +486,11 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 	defer ts.Close()
 
 	md := []byte(fmt.Sprintf(`
-<script>
-| A | B |
-|---|---|
-| ![img](%s) |
-</script>
-`, ts.URL))
+| C1 | C2 |
+| -- | -- |
+| <script>![img](%s)</script> | Row 1 Col 2 |
+| <style>![img](%s)</style> | Row 2 Col 2 |
+`, ts.URL, ts.URL))
 
 	opts := RenderOptions{
 		Width:         200,

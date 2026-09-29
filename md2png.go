@@ -1602,96 +1602,32 @@ func measureCellBounds(c *canvas, tokens []textToken) (int, int) {
 	return minWidth, maxWidth
 }
 
-func (r *renderer) measureTableMinWidth(tbl *extensionAST.Table, md []byte) int {
-	if r.renderErr != nil {
-		return 0
-	}
-	var rows [][]tableCell
-	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
-		if r.renderErr != nil {
-			return 0
-		}
-		switch n := node.(type) {
-		case *extensionAST.TableHeader:
-			var cells []tableCell
-			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				if r.renderErr != nil {
-					return 0
-				}
-				if tc, ok := cell.(*extensionAST.TableCell); ok {
-					var tokens []textToken
-					font := r.c.fonts.Regular
-					if r.c.fonts.Bold != nil {
-						font = r.c.fonts.Bold
-					}
-					r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
-					if r.renderErr != nil {
-						return 0
-					}
-					cells = append(cells, tableCell{tokens: tokens, align: tc.Alignment})
-				}
-			}
-			rows = append(rows, cells)
-		case *extensionAST.TableRow:
-			rows = append(rows, r.collectTableRow(n, md, false))
-		}
-	}
-	if len(rows) == 0 {
-		return 0
-	}
-	colCount := 0
-	for _, row := range rows {
-		if len(row) > colCount {
-			colCount = len(row)
-		}
-	}
-	if colCount == 0 {
-		return 0
-	}
-
-	border := 1
-	cellPadding := int(r.baseSize * 0.6)
-	if cellPadding < 8 {
-		cellPadding = 8
-	}
-
-	colMinWidths := make([]int, colCount)
-	for col := 0; col < colCount; col++ {
-		minW := 20
-		for _, row := range rows {
-			if col < len(row) {
-				cMin, _ := measureCellBounds(r.c, row[col].tokens)
-				if cMin > minW {
-					minW = cMin
-				}
-			}
-		}
-		colMinWidths[col] = minW + 2*cellPadding
-	}
-
-	totalMinWidth := border * (colCount + 1)
-	for col := 0; col < colCount; col++ {
-		totalMinWidth += colMinWidths[col]
-	}
-
-	return totalMinWidth + (2 * r.c.margin)
+type tableLayout struct {
+	rows          [][]tableCell
+	colCount      int
+	colMinWidths  []int
+	colMaxWidths  []int
+	totalMinWidth int
+	totalMaxWidth int
+	border        int
+	cellPadding   int
 }
 
-func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
+func (r *renderer) calculateTableLayout(tbl *extensionAST.Table, md []byte) *tableLayout {
 	if r.renderErr != nil {
-		return
+		return nil
 	}
 	var rows [][]tableCell
 	for node := tbl.FirstChild(); node != nil; node = node.NextSibling() {
 		if r.renderErr != nil {
-			return
+			return nil
 		}
 		switch n := node.(type) {
 		case *extensionAST.TableHeader:
 			var cells []tableCell
 			for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if r.renderErr != nil {
-					return
+					return nil
 				}
 				if tc, ok := cell.(*extensionAST.TableCell); ok {
 					var tokens []textToken
@@ -1701,7 +1637,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 					}
 					r.collectInlineTokens(tc, md, font, r.baseSize, r.c.th.FG, &tokens)
 					if r.renderErr != nil {
-						return
+						return nil
 					}
 					cells = append(cells, tableCell{tokens: tokens, align: tc.Alignment})
 				}
@@ -1712,7 +1648,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		}
 	}
 	if len(rows) == 0 {
-		return
+		return nil
 	}
 	colCount := 0
 	for _, row := range rows {
@@ -1721,7 +1657,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		}
 	}
 	if colCount == 0 {
-		return
+		return nil
 	}
 
 	border := 1
@@ -1759,6 +1695,44 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		totalMinWidth += colMinWidths[col]
 		totalMaxWidth += colMaxWidths[col]
 	}
+
+	return &tableLayout{
+		rows:          rows,
+		colCount:      colCount,
+		colMinWidths:  colMinWidths,
+		colMaxWidths:  colMaxWidths,
+		totalMinWidth: totalMinWidth,
+		totalMaxWidth: totalMaxWidth,
+		border:        border,
+		cellPadding:   cellPadding,
+	}
+}
+
+func (r *renderer) measureTableMinWidth(tbl *extensionAST.Table, md []byte) int {
+	layout := r.calculateTableLayout(tbl, md)
+	if layout == nil {
+		return 0
+	}
+	return layout.totalMinWidth + (2 * r.c.margin)
+}
+
+func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
+	if r.renderErr != nil {
+		return
+	}
+	layout := r.calculateTableLayout(tbl, md)
+	if layout == nil {
+		return
+	}
+
+	colCount := layout.colCount
+	totalMinWidth := layout.totalMinWidth
+	totalMaxWidth := layout.totalMaxWidth
+	colMinWidths := layout.colMinWidths
+	colMaxWidths := layout.colMaxWidths
+	border := layout.border
+	cellPadding := layout.cellPadding
+	rows := layout.rows
 
 	availableWidth := r.c.w - 2*r.c.margin
 
