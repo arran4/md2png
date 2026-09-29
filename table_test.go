@@ -650,11 +650,20 @@ func TestTableFitWidthFailedImageMemo(t *testing.T) {
 	// Test strict mode
 	requestCount = 0
 	opts.DiagnosticPolicy = &DiagnosticPolicy{FailOnImageError: true}
-	_, err = RenderWithDiagnostics(md, opts)
+	strictRes, err := RenderWithDiagnostics(md, opts)
 	if err == nil {
 		t.Fatalf("Expected strict error for failed image")
 	}
 	if requestCount != 1 {
 		t.Fatalf("Expected exactly 1 request for failed image in strict mode, got %d", requestCount)
+	}
+	foundDiag = false
+	for _, diag := range strictRes.Diagnostics {
+		if diag.Code == DiagnosticCode("image_load_failed") {
+			foundDiag = true
+		}
+	}
+	if !foundDiag {
+		t.Fatalf("Expected image_load_failed diagnostic for missing image in strict mode")
 	}
 }

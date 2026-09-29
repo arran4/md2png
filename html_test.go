@@ -14,6 +14,7 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
@@ -505,5 +506,39 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 
 	if requestCount != 0 {
 		t.Fatalf("Expected exactly 0 requests to image server for suppressed table image, got %d", requestCount)
+	}
+
+	// Assert that we actually parsed and rendered a table, avoiding vacuous success
+	// Since RenderWithDiagnostics doesn't return the AST, we will parse it directly here to assert shape.
+	mdParser := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()))
+	doc := mdParser.Parser().Parse(text.NewReader(md))
+
+	hasTable := false
+	hasHTMLBlock := false
+	hasImageInTable := false
+	inTable := false
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		switch n.(type) {
+		case *extensionAST.Table:
+			if entering {
+				inTable = true
+				hasTable = true
+			} else {
+				inTable = false
+			}
+		case *ast.RawHTML, *ast.HTMLBlock:
+			if entering {
+				hasHTMLBlock = true
+			}
+		case *ast.Image:
+			if entering && inTable {
+				hasImageInTable = true
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+
+	if !hasTable || !hasHTMLBlock || !hasImageInTable {
+		t.Fatalf("Expected AST to contain a Table and RawHTML/HTMLBlock, hasTable: %v, hasHTML: %v, hasImage: %v", hasTable, hasHTMLBlock, hasImageInTable)
 	}
 }
