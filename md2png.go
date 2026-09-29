@@ -527,6 +527,7 @@ type renderer struct {
 	renderErr      error
 	htmlState      htmlExtractionState
 	imageMemo      map[string]*memoizedImage
+	isPreflight    bool
 }
 
 type memoizedImage struct {
@@ -719,7 +720,7 @@ func (r *renderer) loadImage(dest string) (image.Image, error) {
 		return nil, fmt.Errorf("md2png: resolver for %q returned nil loader", dest)
 	}
 	img, err := loader()
-	if r.imageMemo != nil {
+	if r.imageMemo != nil && r.isPreflight {
 		r.imageMemo[cacheKey] = &memoizedImage{img: img, err: err}
 	}
 	if err != nil {
@@ -2039,6 +2040,9 @@ func (r *renderer) measureTableFitWidth(md []byte, doc ast.Node) (int, error) {
 	oldState := r.htmlState
 	oldMemo := r.imageMemo
 
+	oldIsPreflight := r.isPreflight
+	r.isPreflight = true
+
 	r.imageMemo = make(map[string]*memoizedImage)
 
 	oldDiagPolicy := r.diagPolicy
@@ -2095,6 +2099,7 @@ func (r *renderer) measureTableFitWidth(md []byte, doc ast.Node) (int, error) {
 	r.footnoteIndex = oldFootnoteIdx
 	r.diagnostics = oldDiags
 	r.renderErr = nil
+	r.isPreflight = oldIsPreflight
 
 	for k, v := range r.imageMemo {
 		oldMemo[k] = v
