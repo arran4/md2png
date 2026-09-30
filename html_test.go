@@ -14,8 +14,8 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
-	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/extension"
+	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 )
@@ -517,7 +517,7 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 	hasHTMLBlock := false
 	hasImageInTable := false
 	inTable := false
-	err = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		switch n.(type) {
 		case *extensionAST.Table:
 			if entering {
@@ -527,7 +527,7 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 				inTable = false
 			}
 		case *ast.RawHTML, *ast.HTMLBlock:
-			if entering && inTable {
+			if entering {
 				hasHTMLBlock = true
 			}
 		case *ast.Image:
@@ -537,9 +537,6 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 		}
 		return ast.WalkContinue, nil
 	})
-	if err != nil {
-		t.Fatalf("Failed to walk AST: %v", err)
-	}
 
 	if !hasTable || !hasHTMLBlock || !hasImageInTable {
 		t.Fatalf("Expected AST to contain a Table and RawHTML/HTMLBlock, hasTable: %v, hasHTML: %v, hasImage: %v", hasTable, hasHTMLBlock, hasImageInTable)

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"github.com/arran4/md2png"
 	"image"
 	"image/gif"
 	"image/jpeg"
@@ -449,4 +450,53 @@ func captureStdoutStderr(t *testing.T, fn func() error) ([]byte, []byte, error) 
 		t.Fatalf("read captured stderr: %v", stderr.err)
 	}
 	return out.data, stderr.data, renderErr
+}
+
+func TestMd2pngTableFitWidthCommand(t *testing.T) {
+	tempDir := t.TempDir()
+	inPath := filepath.Join(tempDir, "input.md")
+	outPath := filepath.Join(tempDir, "output.png")
+
+	md := []byte(`
+| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | --- |
+| 1  | 2  | 3  | 4  | 5  | 6  | 7  | 8  | 9  | 10  |
+`)
+
+	err := os.WriteFile(inPath, md, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	format := "png"
+	width := 200
+	margin := 10
+	tableFit := true
+
+	err = Md2png(&inPath, &outPath, &width, &margin, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, &tableFit)
+	if err != nil {
+		t.Fatalf("Md2png command failed: %v", err)
+	}
+
+	cmdFile, err := os.Open(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cmdFile.Close()
+	cmdImg, _, err := image.Decode(cmdFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmdWidth := cmdImg.Bounds().Dx()
+
+	opts := md2png.RenderOptions{Width: 200, Margin: 10, TableFitWidth: true}
+	res, err := md2png.RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	libWidth := res.Image.Bounds().Dx()
+
+	if cmdWidth != libWidth {
+		t.Fatalf("CLI output width %d did not match library render width %d", cmdWidth, libWidth)
+	}
 }
