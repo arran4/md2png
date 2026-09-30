@@ -605,6 +605,128 @@ Some normal text that wraps to the requested width.
 	}
 }
 
+
+func TestTableFitWidthSemantics(t *testing.T) {
+	policy := DefaultCLIImagePolicy()
+	baseOpts := RenderOptions{
+		Width:         200,
+		Margin:        10,
+		TableFitWidth: true,
+		ImagePolicy:   &policy,
+	}
+
+	// 1. no table => unchanged width
+	noTableMd := []byte("Just some regular text without a table.")
+	res, _ := RenderWithDiagnostics(noTableMd, baseOpts)
+	if res.Image.Bounds().Dx() != 200 {
+		t.Fatalf("Expected unchanged width 200, got %d", res.Image.Bounds().Dx())
+	}
+
+	// 2. fitting table => unchanged width
+	fittingTableMd := []byte("| A | B |\n|---|---|\n| 1 | 2 |")
+	res, _ = RenderWithDiagnostics(fittingTableMd, baseOpts)
+	if res.Image.Bounds().Dx() != 200 {
+		t.Fatalf("Expected unchanged width 200, got %d", res.Image.Bounds().Dx())
+	}
+
+	// 3. oversized table exact minimum width
+	oversizedTableMd := []byte("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |")
+	res, _ = RenderWithDiagnostics(oversizedTableMd, baseOpts)
+	width1 := res.Image.Bounds().Dx()
+	if width1 <= 200 {
+		t.Fatalf("Expected widened width, got %d", width1)
+	}
+
+	// 4. widest of multiple tables and order independence
+	multipleTablesMd := []byte("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |\n\n| A | B |\n|---|---|\n| 1 | 2 |")
+	res, _ = RenderWithDiagnostics(multipleTablesMd, baseOpts)
+	width2 := res.Image.Bounds().Dx()
+	if width1 != width2 {
+		t.Fatalf("Expected order independence for multiple tables, got %d and %d", width1, width2)
+	}
+
+	multipleTablesReverseMd := []byte("| A | B |\n|---|---|\n| 1 | 2 |\n\n| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |")
+	res, _ = RenderWithDiagnostics(multipleTablesReverseMd, baseOpts)
+	width3 := res.Image.Bounds().Dx()
+	if width1 != width3 {
+		t.Fatalf("Expected order independence for multiple tables, got %d and %d", width1, width3)
+	}
+
+	// 5. breakable long token does not force natural/unwrapped width
+	breakableMd := []byte("| " + strings.Repeat("a", 1000) + " |\n| --- |\n| a |")
+	res, _ = RenderWithDiagnostics(breakableMd, baseOpts)
+	if res.Image.Bounds().Dx() > 500 {
+		t.Fatalf("Expected width not to expand naturally, got %d", res.Image.Bounds().Dx())
+	}
+
+	// 6. margins/right border remain in bounds
+	if res.Image.Bounds().Dx() < 40 {
+		t.Fatalf("Canvas should include margins correctly")
+	}
+
+	// 7. styled/multiline cells
+	styledMd := []byte("| **Bold** | *Italic* |\n|---|---|\n| Line 1<br>Line 2 | `Code` |")
+	res, _ = RenderWithDiagnostics(styledMd, baseOpts)
+	if res.Image.Bounds().Dx() > 300 {
+		t.Fatalf("Styled table should not unnecessarily expand, got %d", res.Image.Bounds().Dx())
+	}
+
+	// 8. wide image does not force natural-width expansion or upscaling
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		img := image.NewRGBA(image.Rect(0, 0, 800, 100))
+		w.Header().Set("Content-Type", "image/png")
+		if err := png.Encode(w, img); err != nil {
+			t.Errorf("Failed to encode png: %v", err)
+		}
+	}))
+	defer ts.Close()
+	wideImageMd := []byte(fmt.Sprintf("| ![wide](%s) |", ts.URL))
+	res, _ = RenderWithDiagnostics(wideImageMd, baseOpts)
+	if res.Image.Bounds().Dx() > 250 {
+		t.Fatalf("Wide image should not force natural width expansion, got %d", res.Image.Bounds().Dx())
+	}
+
+	// 9. exact MaxAllowedWidth acceptance
+	opts := baseOpts
+	opts.Width = MaxAllowedWidth
+	res, err := RenderWithDiagnostics([]byte("| A | B |\n|---|---|\n| 1 | 2 |"), opts)
+	if err != nil {
+		t.Fatalf("Expected exact MaxAllowedWidth to pass, got error: %v", err)
+	}
+	if res.Image.Bounds().Dx() != MaxAllowedWidth {
+		t.Fatalf("Expected width exactly MaxAllowedWidth")
+	}
+
+	// 10. over-MaxAllowedWidth deterministic failure
+	hugeCols := strings.Repeat("| Col ", 5000) + "|\n"
+	hugeRows := strings.Repeat("| --- ", 5000) + "|\n"
+	hugeCells := strings.Repeat("| A ", 5000) + "|\n"
+	hugeMd := []byte(hugeCols + hugeRows + hugeCells)
+	_, err = RenderWithDiagnostics(hugeMd, baseOpts)
+	if err == nil || !strings.Contains(err.Error(), "dimension exceeds resource limit") {
+		t.Fatalf("Expected dimension exceeds resource limit, got %v", err)
+	}
+
+	// 11. MaxTotalPixels interaction
+	tallMd := []byte("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n" + strings.Repeat("| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |\n", 2000))
+	opts.Width = 32000
+	opts.MaxHeight = 100000
+	oldMaxTotalPixels := maxTotalPixels
+	maxTotalPixels = 100000
+	defer func() { maxTotalPixels = oldMaxTotalPixels }()
+	_, err = RenderWithDiagnostics(tallMd, opts)
+
+	// 12. disabled mode preserves impossible-table behaviour
+	disabledOpts := baseOpts
+	disabledOpts.TableFitWidth = false
+	disabledOpts.DiagnosticPolicy = &DiagnosticPolicy{FailOnUnsupported: true}
+	narrowMd := []byte("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |")
+	res, err = RenderWithDiagnostics(narrowMd, disabledOpts)
+	if err == nil {
+		t.Fatalf("Expected table layout impossible error when disabled")
+	}
+}
+
 func TestTableFitWidthFailedImageMemo(t *testing.T) {
 	policy := DefaultCLIImagePolicy()
 	var requestCount int
