@@ -517,7 +517,7 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 	hasHTMLBlock := false
 	hasImageInTable := false
 	inTable := false
-	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	walkErr := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		switch n.(type) {
 		case *extensionAST.Table:
 			if entering {
@@ -527,7 +527,7 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 				inTable = false
 			}
 		case *ast.RawHTML, *ast.HTMLBlock:
-			if entering {
+			if entering && inTable {
 				hasHTMLBlock = true
 			}
 		case *ast.Image:
@@ -537,6 +537,9 @@ func TestTableFitWidthHTMLSuppression(t *testing.T) {
 		}
 		return ast.WalkContinue, nil
 	})
+	if walkErr != nil {
+		t.Fatalf("Failed to walk AST: %v", walkErr)
+	}
 
 	if !hasTable || !hasHTMLBlock || !hasImageInTable {
 		t.Fatalf("Expected AST to contain a Table and RawHTML/HTMLBlock, hasTable: %v, hasHTML: %v, hasImage: %v", hasTable, hasHTMLBlock, hasImageInTable)
