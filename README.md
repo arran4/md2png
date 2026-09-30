@@ -148,7 +148,7 @@ func main() {
 
 ## Table Fit Width
 
-By default, `md2png` rigidly wraps and clips content into the specified `--width`. If a Markdown table requires more horizontal space than what's available (including margins), it produces a `table_layout_impossible` error and fails to render.
+By default, `md2png` rigidly wraps and clips content into the specified `--width`. If a Markdown table requires more horizontal space than what's available (including margins), it produces a `table_layout_impossible` diagnostic, substituting a best-effort warning message in non-strict mode, or failing fully if `--strict` is enabled.
 
 Enabling `--table-fit-width` (or setting `RenderOptions.TableFitWidth = true` via the API) prevents this by dynamically widening the image to accommodate the table's *minimum feasible width*.
 
