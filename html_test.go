@@ -15,6 +15,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 )
@@ -470,5 +471,77 @@ func TestSuppressedHTML_CompleteCoverage(t *testing.T) {
 				t.Fatalf("Expected local image diagnostic to be %v, got %v", tt.expectLocalImageDiag, hasLocalDiag)
 			}
 		})
+	}
+}
+
+func TestTableFitWidthHTMLSuppression(t *testing.T) {
+	policy := DefaultCLIImagePolicy()
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "image/png")
+		if err := png.Encode(w, image.NewRGBA(image.Rect(0, 0, 10, 10))); err != nil {
+			t.Errorf("Failed to encode PNG: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	md := []byte(fmt.Sprintf(`
+| C1 | C2 |
+| -- | -- |
+| <script>![img](%s)</script> | Row 1 Col 2 |
+| <style>![img](%s)</style> | Row 2 Col 2 |
+`, ts.URL, ts.URL))
+
+	opts := RenderOptions{
+		Width:         200,
+		TableFitWidth: true,
+		ImagePolicy:   &policy,
+	}
+
+	_, err := RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	if requestCount != 0 {
+		t.Fatalf("Expected exactly 0 requests to image server for suppressed table image, got %d", requestCount)
+	}
+
+	// Assert that we actually parsed and rendered a table, avoiding vacuous success
+	// Since RenderWithDiagnostics doesn't return the AST, we will parse it directly here to assert shape.
+	mdParser := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()))
+	doc := mdParser.Parser().Parse(text.NewReader(md))
+
+	hasTable := false
+	hasHTMLBlock := false
+	hasImageInTable := false
+	inTable := false
+	walkErr := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		switch n.(type) {
+		case *extensionAST.Table:
+			if entering {
+				inTable = true
+				hasTable = true
+			} else {
+				inTable = false
+			}
+		case *ast.RawHTML, *ast.HTMLBlock:
+			if entering && inTable {
+				hasHTMLBlock = true
+			}
+		case *ast.Image:
+			if entering && inTable {
+				hasImageInTable = true
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if walkErr != nil {
+		t.Fatalf("Failed to walk AST: %v", walkErr)
+	}
+
+	if !hasTable || !hasHTMLBlock || !hasImageInTable {
+		t.Fatalf("Expected AST to contain a Table and RawHTML/HTMLBlock, hasTable: %v, hasHTML: %v, hasImage: %v", hasTable, hasHTMLBlock, hasImageInTable)
 	}
 }

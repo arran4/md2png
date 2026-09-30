@@ -84,6 +84,7 @@ type RootCmd struct {
 	footnoteLinks  *bool
 	footnoteImages *bool
 	maxHeight      *int
+	tableFitWidth  *bool
 	args           []string
 	CommandAction  func(c *RootCmd) error
 }
@@ -202,9 +203,19 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.BoolFunc("table-fit-width", "flag: Expand canvas width to fit tables", func(s string) error {
+		parsed, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.tableFitWidth = &val
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -433,6 +444,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
 				}
 				c.maxHeight = &iv
+
+			case "tableFitWidth", "table-fit-width":
+				if hasValue {
+					b, err := strconv.ParseBool(value)
+					if err != nil {
+						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+					}
+					c.tableFitWidth = &b
+				} else {
+					b := true
+					c.tableFitWidth = &b
+				}
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)
 			}

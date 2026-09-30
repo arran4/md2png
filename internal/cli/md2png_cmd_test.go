@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"github.com/arran4/md2png"
 	"image"
 	"image/gif"
 	"image/jpeg"
@@ -128,7 +129,7 @@ func TestMd2png_Integration(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			outPath := filepath.Join(tempDir, tc.outName)
-			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil)
+			err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tc.formatFlag, nil, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Md2png() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -184,7 +185,7 @@ func TestMd2png_StdoutFormats(t *testing.T) {
 		t.Run(tc.format, func(t *testing.T) {
 			outArg := "-"
 			output, err := captureStdout(t, func() error {
-				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil)
+				return Md2png(&inPath, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(tc.format), nil, nil)
 			})
 			if err != nil {
 				t.Fatalf("Md2png() error = %v", err)
@@ -209,7 +210,7 @@ func TestMd2png_PreserveDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil)
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("jpeg"), nil, nil)
 	if err == nil {
 		t.Fatal("expected error but got nil")
 	}
@@ -333,7 +334,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 
 	outArg := "-"
 	output, err := captureStdout(t, func() error {
-		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil)
+		return Md2png(nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil, nil)
 	})
 	if err != nil {
 		t.Fatalf("Md2png() error = %v", err)
@@ -350,7 +351,7 @@ func TestMd2pngStrict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true))
+	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true), nil)
 	if err == nil {
 		t.Fatal("Expected error with strict mode, got nil")
 	}
@@ -367,7 +368,7 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 
 	outPath := "-"
 	outBytes, errBytes, err := captureStdoutStderr(t, func() error {
-		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false))
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(false), nil)
 	})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -385,7 +386,7 @@ func TestMd2pngCLIStdoutStderr(t *testing.T) {
 
 	// Strict failure produces no stdout image but retains a diagnostic on stderr.
 	outBytesStrict, errBytesStrict, errStrict := captureStdoutStderr(t, func() error {
-		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true))
+		return Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), ptr(true), nil)
 	})
 	if errStrict == nil {
 		t.Fatalf("Expected error in strict mode")
@@ -449,4 +450,57 @@ func captureStdoutStderr(t *testing.T, fn func() error) ([]byte, []byte, error) 
 		t.Fatalf("read captured stderr: %v", stderr.err)
 	}
 	return out.data, stderr.data, renderErr
+}
+
+func TestMd2pngTableFitWidthCommand(t *testing.T) {
+	tempDir := t.TempDir()
+	inPath := filepath.Join(tempDir, "input.md")
+	outPath := filepath.Join(tempDir, "output.png")
+
+	md := []byte(`
+| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | --- |
+| 1  | 2  | 3  | 4  | 5  | 6  | 7  | 8  | 9  | 10  |
+`)
+
+	err := os.WriteFile(inPath, md, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	format := "png"
+	width := 200
+	margin := 10
+	tableFit := true
+
+	err = Md2png(&inPath, &outPath, &width, &margin, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, &tableFit)
+	if err != nil {
+		t.Fatalf("Md2png command failed: %v", err)
+	}
+
+	cmdFile, err := os.Open(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := cmdFile.Close(); err != nil {
+			t.Errorf("Failed to close cmdFile: %v", err)
+		}
+	}()
+	cmdImg, _, err := image.Decode(cmdFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmdWidth := cmdImg.Bounds().Dx()
+
+	opts := md2png.RenderOptions{Width: 200, Margin: 10, TableFitWidth: true}
+	res, err := md2png.RenderWithDiagnostics(md, opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	libWidth := res.Image.Bounds().Dx()
+
+	if cmdWidth != libWidth {
+		t.Fatalf("CLI output width %d did not match library render width %d", cmdWidth, libWidth)
+	}
 }
