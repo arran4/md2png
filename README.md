@@ -146,6 +146,24 @@ func main() {
 
 `RenderOptions` exposes the same knobs as the CLI. Set custom dimensions, limits (`MaxHeight`), swap themes, toggle link or image footnotes, or pass a font set created with `md2png.LoadFonts`.
 
+## Table Fit Width
+
+By default, `md2png` rigidly wraps and clips content into the specified `--width`. If a Markdown table requires more horizontal space than what's available (including margins), it produces a `table_layout_impossible` error and fails to render.
+
+Enabling `--table-fit-width` (or setting `RenderOptions.TableFitWidth = true` via the API) prevents this by dynamically widening the image to accommodate the table's *minimum feasible width*.
+
+- `--width` sets the *minimum* starting output canvas width.
+- If tables are present, the canvas width will scale outward to contain the widest minimum-width table across the document.
+- This process relies on *minimum feasible width* rather than *natural* width. Breakable content (long text separated by spaces, or naturally wrappable columns) will still break, meaning the table doesn't unnecessarily expand the canvas unless it is structurally impossible to render at the requested width.
+- The final widened result still includes configured margins on both sides.
+- `MaxAllowedWidth` ensures canvases do not exceed 32768 pixels wide, mitigating denial of service against unbounded scaling. Errors such as `ErrResourceLimit` are emitted if scaling breaches this bound or `MaxTotalPixels`.
+
+### Example
+```bash
+# If the table inside example.md needs 1200px width, output width will be 1200 instead of 1024
+./md2png --in example.md --out example.png --width 1024 --table-fit-width
+```
+
 ### Structured Diagnostics and Safe Raw-HTML Policy
 
 When rendering documents with unresolvable resources or unsupported AST nodes, md2png adopts a "best-effort" approach by default. It degrades non-fatally and avoids rendering raw HTML markup to output text blocks (preventing injection of scripts or un-styled DOM structures).

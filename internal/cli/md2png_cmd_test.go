@@ -482,7 +482,11 @@ func TestMd2pngTableFitWidthCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cmdFile.Close()
+	defer func() {
+		if err := cmdFile.Close(); err != nil {
+			t.Errorf("Failed to close cmdFile: %v", err)
+		}
+	}()
 	cmdImg, _, err := image.Decode(cmdFile)
 	if err != nil {
 		t.Fatal(err)
