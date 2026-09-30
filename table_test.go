@@ -747,11 +747,19 @@ func TestTableFitWidthSemantics(t *testing.T) {
 	// We can check pixel at x=400 (last border pixel is x=400), x=401 should be white.
 	oversizedTableRes, err := RenderWithDiagnostics(oversizedTableMd, baseOpts)
 	checkErr(err)
+	foundBorder := false
 	for y := oversizedTableRes.Image.Bounds().Min.Y; y < oversizedTableRes.Image.Bounds().Max.Y; y++ {
+		rB, gB, bB, _ := oversizedTableRes.Image.At(400, y).RGBA()
+		if rB < 0xffff || gB < 0xffff || bB < 0xffff {
+			foundBorder = true
+		}
 		r, g, b, _ := oversizedTableRes.Image.At(401, y).RGBA()
 		if r < 0xffff || g < 0xffff || b < 0xffff {
 			t.Fatalf("Expected right margin to be clean, but found non-white pixel at %d, %d", 401, y)
 		}
+	}
+	if !foundBorder {
+		t.Fatalf("Expected to find a table border at x=400, but found none")
 	}
 
 	// 7. styled/multiline cells
@@ -779,7 +787,15 @@ func TestTableFitWidthSemantics(t *testing.T) {
 	}
 
 	// Ensure that image upscaling does not occur merely due to widened columns
-	upscaleMd := []byte(fmt.Sprintf("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | ![wide](%s) |", ts.URL))
+	tsSmall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+		if err := png.Encode(w, img); err != nil {
+			t.Errorf("Failed to encode png: %v", err)
+		}
+	}))
+	defer tsSmall.Close()
+	upscaleMd := []byte(fmt.Sprintf("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | ![small](%s) |", tsSmall.URL))
 	res, err = RenderWithDiagnostics(upscaleMd, baseOpts)
 	checkErr(err)
 	if res.Image.Bounds().Dx() != 411 {
@@ -810,13 +826,13 @@ func TestTableFitWidthSemantics(t *testing.T) {
 		t.Fatalf("Expected dimension exceeds resource limit, got %v", err)
 	}
 
-	// 11. MaxTotalPixels interaction
-	tallMd := []byte("| C1 | C2 |\n|---|---|\n" + strings.Repeat("| 1 | 2 |\n", 2000))
+	// 11. MaxTotalPixels interaction: fit-width expands width and trips the max total pixels limit
+	tallMd := []byte("| C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 |\n|---|---|---|---|---|---|---|---|---|---|\n" + strings.Repeat("| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |\n", 500))
 	tallOpts := baseOpts
-	tallOpts.Width = 32000
+	tallOpts.Width = 200
 	tallOpts.MaxHeight = 100000
 	oldMaxTotalPixels := maxTotalPixels
-	maxTotalPixels = 500000
+	maxTotalPixels = 2000000
 	defer func() { maxTotalPixels = oldMaxTotalPixels }()
 	_, err = RenderWithDiagnostics(tallMd, tallOpts)
 	if err == nil || (!strings.Contains(err.Error(), "resource limit") && !strings.Contains(err.Error(), "pixel budget")) {
@@ -827,7 +843,7 @@ func TestTableFitWidthSemantics(t *testing.T) {
 	disabledOpts := baseOpts
 	disabledOpts.TableFitWidth = false
 	disabledOpts.DiagnosticPolicy = &DiagnosticPolicy{FailOnUnsupported: true}
-	res, err = RenderWithDiagnostics(oversizedTableMd, disabledOpts)
+	_, err = RenderWithDiagnostics(oversizedTableMd, disabledOpts)
 	if err == nil {
 		t.Fatalf("Expected table layout impossible error when disabled")
 	}
