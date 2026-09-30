@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -790,6 +791,12 @@ func TestTableFitWidthSemantics(t *testing.T) {
 	tsSmall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+		for x := 0; x < 10; x++ {
+			for y := 0; y < 10; y++ {
+				// Make it distinctive blue
+				img.Set(x, y, color.RGBA{0, 0, 255, 255})
+			}
+		}
 		if err := png.Encode(w, img); err != nil {
 			t.Errorf("Failed to encode png: %v", err)
 		}
@@ -800,6 +807,21 @@ func TestTableFitWidthSemantics(t *testing.T) {
 	checkErr(err)
 	if res.Image.Bounds().Dx() != 411 {
 		t.Fatalf("Upscale scenario should have exactly calculated table width 411, got %d", res.Image.Bounds().Dx())
+	}
+
+	// Now prove the image stayed 10x10. Search for the distinctive blue pixels.
+	blueCount := 0
+	for y := res.Image.Bounds().Min.Y; y < res.Image.Bounds().Max.Y; y++ {
+		for x := res.Image.Bounds().Min.X; x < res.Image.Bounds().Max.X; x++ {
+			r, g, b, a := res.Image.At(x, y).RGBA()
+			// Need exact match for pure blue
+			if r == 0 && g == 0 && b == 0xffff && a == 0xffff {
+				blueCount++
+			}
+		}
+	}
+	if blueCount != 100 {
+		t.Fatalf("Expected exactly 100 distinctive blue pixels for the 10x10 small image, got %d (upscaled?)", blueCount)
 	}
 
 	// 9. exact MaxAllowedWidth acceptance
