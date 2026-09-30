@@ -811,17 +811,37 @@ func TestTableFitWidthSemantics(t *testing.T) {
 
 	// Now prove the image stayed 10x10. Search for the distinctive blue pixels.
 	blueCount := 0
+	minX, minY := -1, -1
+	maxX, maxY := -1, -1
 	for y := res.Image.Bounds().Min.Y; y < res.Image.Bounds().Max.Y; y++ {
 		for x := res.Image.Bounds().Min.X; x < res.Image.Bounds().Max.X; x++ {
 			r, g, b, a := res.Image.At(x, y).RGBA()
 			// Need exact match for pure blue
 			if r == 0 && g == 0 && b == 0xffff && a == 0xffff {
 				blueCount++
+				if minX == -1 || x < minX {
+					minX = x
+				}
+				if maxX == -1 || x > maxX {
+					maxX = x
+				}
+				if minY == -1 || y < minY {
+					minY = y
+				}
+				if maxY == -1 || y > maxY {
+					maxY = y
+				}
 			}
 		}
 	}
 	if blueCount != 100 {
 		t.Fatalf("Expected exactly 100 distinctive blue pixels for the 10x10 small image, got %d (upscaled?)", blueCount)
+	}
+	if maxX-minX+1 != 10 {
+		t.Fatalf("Expected small image bounds width to remain exactly 10, got %d", maxX-minX+1)
+	}
+	if maxY-minY+1 != 10 {
+		t.Fatalf("Expected small image bounds height to remain exactly 10, got %d", maxY-minY+1)
 	}
 
 	// 9. exact MaxAllowedWidth acceptance
