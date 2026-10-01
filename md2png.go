@@ -437,18 +437,30 @@ func syntaxColorFor(tokType chroma.TokenType, palette SyntaxPalette, fallback co
 	return c
 }
 
+func (r *renderer) plainCodeSpans(text string, th Theme) [][]codeSpan {
+	var lines [][]codeSpan
+	parts := strings.Split(text, "\n")
+	for _, part := range parts {
+		lines = append(lines, []codeSpan{{Text: part, Color: th.FG}})
+	}
+	if len(lines) == 0 {
+		lines = append(lines, []codeSpan{{Text: "", Color: th.FG}})
+	}
+	return lines
+}
+
 func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]codeSpan {
 	if disableHighlight || lang == "" {
-		return [][]codeSpan{{{Text: text, Color: th.FG}}}
+		return r.plainCodeSpans(text, th)
 	}
 	lexer := lexers.Get(lang)
 	if lexer == nil {
-		return [][]codeSpan{{{Text: text, Color: th.FG}}}
+		return r.plainCodeSpans(text, th)
 	}
 	lexer = chroma.Coalesce(lexer)
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
-		return [][]codeSpan{{{Text: text, Color: th.FG}}}
+		return r.plainCodeSpans(text, th)
 	}
 
 	var lines [][]codeSpan
