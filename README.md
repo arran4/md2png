@@ -271,7 +271,7 @@ Everything happens in memory; there is no HTML renderer or external process.
 
 - [x] Tables
 - [x] Inline images
-- [ ] Syntax highlighting
+- [x] Syntax highlighting
 - [ ] SVG output
 - [ ] Configurable themes via YAML/JSON
 

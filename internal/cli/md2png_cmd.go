@@ -26,6 +26,7 @@ func Md2png(
 	format *string, // flag: --format Output format: png, jpeg, or gif
 	strict *bool, // flag: --strict Enable strict rendering (fail on warnings)
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
+	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
 ) error {
 	var data []byte
 	var baseDir string
@@ -66,7 +67,7 @@ func Md2png(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, baseDir)
 	if err != nil {
 		return err
 	}

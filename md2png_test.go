@@ -27,28 +27,115 @@ func (m mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m(req)
 }
 
-func TestWrapLinesPreservesIndentation(t *testing.T) {
+func TestSyntaxHighlighting(t *testing.T) {
+	md := "~~~go\nfunc main() {\n  fmt.Println(\"Hello\")\n}\n~~~\n\n~~~\nplain block\n~~~\n\n    indented block"
+
+	opts := RenderOptions{Width: 800, DisableHighlighting: false, Margin: 10}
+
+	// Preflight check: just ensuring it renders and lexes
+	res, err := RenderWithDiagnostics([]byte(md), opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if res.Image == nil {
+		t.Fatalf("expected image")
+	}
+
+	optsDisabled := RenderOptions{Width: 800, DisableHighlighting: true, Margin: 10}
+	resDisabled, err := RenderWithDiagnostics([]byte(md), optsDisabled)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if resDisabled.Image == nil {
+		t.Fatalf("expected image")
+	}
+}
+
+func TestSyntaxHighlightingTokens(t *testing.T) {
+	r := &renderer{}
+	th := lightTheme
+
+	spans := r.tokenizeCodeBlock("func main()", "go", th, false)
+	if len(spans) == 0 || len(spans[0]) < 2 {
+		t.Fatalf("expected highlighted tokens, got %v", spans)
+	}
+	hasKeyword := false
+	for _, s := range spans[0] {
+		if s.Text == "func" {
+			hasKeyword = true
+			if s.Color == th.FG {
+				t.Fatalf("expected keyword to be highlighted, got base FG color")
+			}
+		}
+	}
+	if !hasKeyword {
+		t.Fatalf("did not find expected 'func' token")
+	}
+
+	// test disabled
+	spansDisabled := r.tokenizeCodeBlock("func main()", "go", th, true)
+	if len(spansDisabled) != 1 || len(spansDisabled[0]) != 1 {
+		t.Fatalf("expected 1 span when disabled")
+	}
+	if spansDisabled[0][0].Color != th.FG {
+		t.Fatalf("expected base FG color when disabled")
+	}
+
+	// test fallback
+	spansFallback := r.tokenizeCodeBlock("func main()", "unknownlanguage123", th, false)
+	if len(spansFallback) != 1 || len(spansFallback[0]) != 1 {
+		t.Fatalf("expected 1 span for unknown language")
+	}
+	if spansFallback[0][0].Color != th.FG {
+		t.Fatalf("expected base FG color for unknown language")
+	}
+}
+
+func TestWrapCodeSpans(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
+
 	text := "    spaced  out"
-	lines := wrapLines(fonts.Mono, 14, text, 140)
-	if len(lines) == 0 {
+	lines := wrapCodeSpans(fonts.Mono, 14, [][]CodeSpan{{{Text: text, Color: color.White}}}, 140)
+	if len(lines) == 0 || len(lines[0]) == 0 {
 		t.Fatalf("expected at least one line")
 	}
-	if !strings.HasPrefix(lines[0], "    ") {
-		t.Fatalf("expected leading spaces to be preserved, got %q", lines[0])
+	if !strings.HasPrefix(lines[0][0].Text, "    ") {
+		t.Fatalf("expected leading spaces to be preserved, got %q", lines[0][0].Text)
 	}
-	joined := strings.Join(lines, "")
+
+	joined := ""
+	for _, l := range lines {
+		for _, tok := range l {
+			joined += tok.Text
+		}
+	}
 	if !strings.Contains(joined, "  out") {
 		t.Fatalf("expected double spaces inside wrapped lines to be preserved, got %q", joined)
 	}
 
-	long := "averyverylongtokenwithoutspaces"
-	longLines := wrapLines(fonts.Mono, 14, long, 80)
+	spans := []CodeSpan{
+		{Text: "avery", Color: color.White},
+		{Text: "verylongtokenwithout", Color: color.Black},
+		{Text: "spaces", Color: color.White},
+	}
+
+	longLines := wrapCodeSpans(fonts.Mono, 14, [][]CodeSpan{spans}, 80)
 	if len(longLines) < 2 {
-		t.Fatalf("expected long token to wrap across multiple lines, got %v", longLines)
+		t.Fatalf("expected long token to wrap across multiple lines, got %d lines", len(longLines))
+	}
+
+	colorsSeen := make(map[color.Color]bool)
+	for _, l := range longLines {
+		for _, s := range l {
+			colorsSeen[s.Color] = true
+		}
+	}
+
+	if len(colorsSeen) < 2 {
+		t.Fatalf("expected multiple colors to survive wrapping")
 	}
 }
 

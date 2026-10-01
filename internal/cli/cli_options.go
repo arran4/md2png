@@ -19,6 +19,7 @@ func ConvertCommandArgsToRenderOptions(
 	footnoteImages *bool,
 	maxHeight *int,
 	tableFitWidth *bool,
+	disableHighlighting *bool,
 	baseDir string,
 ) (md2png.RenderOptions, error) {
 	themeName := "light"
@@ -94,6 +95,9 @@ func ConvertCommandArgsToRenderOptions(
 	}
 	if tableFitWidth != nil {
 		opts.TableFitWidth = *tableFitWidth
+	}
+	if disableHighlighting != nil {
+		opts.DisableHighlighting = *disableHighlighting
 	}
 
 	return opts, nil

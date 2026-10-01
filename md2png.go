@@ -23,6 +23,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/yuin/goldmark"
@@ -70,12 +72,23 @@ var maxTotalPixels = int64(MaxTotalPixels) // Overridable for testing
 
 // ---- Styles & theme ----
 
+type SyntaxPalette struct {
+	Keyword     color.Color
+	String      color.Color
+	Comment     color.Color
+	Type        color.Color
+	Number      color.Color
+	Builtin     color.Color
+	Punctuation color.Color
+}
+
 type Theme struct {
 	BG       color.Color
 	FG       color.Color
 	CodeBG   color.Color
 	QuoteBar color.Color
 	HRule    color.Color
+	Syntax   SyntaxPalette
 }
 
 var (
@@ -86,6 +99,15 @@ var (
 		CodeBG:   color.RGBA{0xF5, 0xF5, 0xF7, 0xFF},
 		QuoteBar: color.RGBA{0xCC, 0xCC, 0xCC, 0xFF},
 		HRule:    color.RGBA{0xDD, 0xDD, 0xDD, 0xFF},
+		Syntax: SyntaxPalette{
+			Keyword:     color.RGBA{0x00, 0x00, 0xFF, 0xFF},
+			String:      color.RGBA{0xA3, 0x15, 0x15, 0xFF},
+			Comment:     color.RGBA{0x00, 0x80, 0x00, 0xFF},
+			Type:        color.RGBA{0x2B, 0x91, 0xAF, 0xFF},
+			Number:      color.RGBA{0x09, 0x86, 0x58, 0xFF},
+			Builtin:     color.RGBA{0x79, 0x5E, 0x26, 0xFF},
+			Punctuation: color.RGBA{0x11, 0x11, 0x11, 0xFF},
+		},
 	}
 	// Dark theme defaults
 	darkTheme = Theme{
@@ -94,6 +116,15 @@ var (
 		CodeBG:   color.RGBA{0x1E, 0x1E, 0x22, 0xFF},
 		QuoteBar: color.RGBA{0x44, 0x44, 0x48, 0xFF},
 		HRule:    color.RGBA{0x33, 0x33, 0x36, 0xFF},
+		Syntax: SyntaxPalette{
+			Keyword:     color.RGBA{0x56, 0x9C, 0xD6, 0xFF},
+			String:      color.RGBA{0xCE, 0x91, 0x78, 0xFF},
+			Comment:     color.RGBA{0x6A, 0x99, 0x55, 0xFF},
+			Type:        color.RGBA{0x4E, 0xC9, 0xB0, 0xFF},
+			Number:      color.RGBA{0xB5, 0xCE, 0xA8, 0xFF},
+			Builtin:     color.RGBA{0xDC, 0xDC, 0xAA, 0xFF},
+			Punctuation: color.RGBA{0xEE, 0xEE, 0xF0, 0xFF},
+		},
 	}
 	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
 	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
@@ -371,12 +402,146 @@ func (c *canvas) drawBlockquoteBar(topY, height int) {
 	draw.Draw(c.img, rect, image.NewUniform(c.th.QuoteBar), image.Point{}, draw.Src)
 }
 
-func (c *canvas) drawCodeBlock(text string, left, right int, size float64) {
+type CodeSpan struct {
+	Text  string
+	Color color.Color
+}
+
+func SyntaxColorFor(tokType chroma.TokenType, palette SyntaxPalette, fallback color.Color) color.Color {
+	var c color.Color
+	switch tokType.Category() {
+	case chroma.Keyword:
+		c = palette.Keyword
+	case chroma.String:
+		c = palette.String
+	case chroma.Comment:
+		c = palette.Comment
+	case chroma.Name:
+		c = palette.Type
+	case chroma.Number:
+		c = palette.Number
+	case chroma.Operator, chroma.Punctuation:
+		c = palette.Punctuation
+	case chroma.NameBuiltin:
+		c = palette.Builtin
+	}
+
+	if c == nil {
+		return fallback
+	}
+	if _, _, _, a := c.RGBA(); a == 0 {
+		return fallback
+	}
+	return c
+}
+
+func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]CodeSpan {
+	if disableHighlight || lang == "" {
+		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+	}
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+	}
+	lexer = chroma.Coalesce(lexer)
+	iterator, err := lexer.Tokenise(nil, text)
+	if err != nil {
+		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+	}
+
+	var lines [][]CodeSpan
+	var currentLine []CodeSpan
+
+	for _, t := range iterator.Tokens() {
+		col := SyntaxColorFor(t.Type, th.Syntax, th.FG)
+		parts := strings.Split(t.Value, "\n")
+		for i, part := range parts {
+			if i > 0 {
+				lines = append(lines, currentLine)
+				currentLine = nil
+			}
+			if part != "" {
+				currentLine = append(currentLine, CodeSpan{Text: part, Color: col})
+			}
+		}
+	}
+	if len(currentLine) > 0 {
+		lines = append(lines, currentLine)
+	}
+	if len(lines) == 0 {
+		lines = append(lines, []CodeSpan{{Text: "", Color: th.FG}})
+	}
+	return lines
+}
+
+func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]CodeSpan, maxWidth float64) [][]CodeSpan {
+	if maxWidth <= 0 {
+		return spans
+	}
+	var result [][]CodeSpan
+	for _, line := range spans {
+		var currentLine []CodeSpan
+		currentWidth := 0.0
+
+		flush := func() {
+			if len(currentLine) > 0 {
+				result = append(result, currentLine)
+				currentLine = nil
+				currentWidth = 0.0
+			}
+		}
+
+		for _, span := range line {
+			if span.Text == "" {
+				continue
+			}
+
+			tokens := splitTextPreserveSpaces(span.Text)
+			for _, token := range tokens {
+				if token == "" {
+					continue
+				}
+				tokenWidth := measureWidth(ff, size, token)
+				if currentWidth+tokenWidth <= maxWidth {
+					currentLine = append(currentLine, CodeSpan{Text: token, Color: span.Color})
+					currentWidth += tokenWidth
+					continue
+				}
+
+				for _, r := range token {
+					charStr := string(r)
+					charW := measureWidth(ff, size, charStr)
+
+					if currentWidth > 0 && currentWidth+charW > maxWidth {
+						flush()
+					}
+
+					if len(currentLine) > 0 && currentLine[len(currentLine)-1].Color == span.Color {
+						currentLine[len(currentLine)-1].Text += charStr
+					} else {
+						currentLine = append(currentLine, CodeSpan{Text: charStr, Color: span.Color})
+					}
+					currentWidth += charW
+				}
+			}
+		}
+		if len(currentLine) > 0 {
+			result = append(result, currentLine)
+		} else if len(line) == 0 {
+			result = append(result, []CodeSpan{})
+		}
+	}
+	if len(result) == 0 {
+		return [][]CodeSpan{{}}
+	}
+	return result
+}
+
+func (c *canvas) drawCodeBlock(spans [][]CodeSpan, left, right int, size float64) {
 	pad := 10
 	top := c.cursorY
-	// measure height by counting wrapped lines
 	mono := c.fonts.Mono
-	lines := wrapLines(mono, size, text, float64(right-left-2*pad))
+	lines := wrapCodeSpans(mono, size, spans, float64(right-left-2*pad))
 	lineHeight := int(size * 1.4)
 	height := len(lines)*lineHeight + 2*pad + 6
 
@@ -387,11 +552,18 @@ func (c *canvas) drawCodeBlock(text string, left, right int, size float64) {
 	draw.Draw(c.img, rect, image.NewUniform(c.th.CodeBG), image.Point{}, draw.Src)
 
 	// draw text
-	c.setFace(mono, c.th.FG, size)
 	y := top + pad + int(size)
 	for _, ln := range lines {
-		pt := freetype.Pt(left+pad, y)
-		_, _ = c.dc.DrawString(ln, pt)
+		x := float64(left + pad)
+		for _, span := range ln {
+			if span.Text == "" {
+				continue
+			}
+			c.setFace(mono, span.Color, size)
+			pt := freetype.Pt(int(x), y)
+			_, _ = c.dc.DrawString(span.Text, pt)
+			x += measureWidth(mono, size, span.Text)
+		}
 		y += lineHeight
 	}
 	c.cursorY = top + height + 6
@@ -528,6 +700,7 @@ type renderer struct {
 	htmlState      htmlExtractionState
 	imageMemo      map[string]*memoizedImage
 	isPreflight    bool
+	opts           RenderOptions
 }
 
 type memoizedImage struct {
@@ -1477,15 +1650,18 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 			ensureMarker(startY + int(r.baseSize))
 			text := strings.TrimRight(getNodeText(c, md), "\n")
 			r.c.addVSpace(int(r.baseSize * 0.2))
-			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
+			spans := r.tokenizeCodeBlock(text, "", r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
 				r.c.addVSpace(blockSpacing)
 			}
 		case *ast.FencedCodeBlock:
 			ensureMarker(startY + int(r.baseSize))
 			text := strings.TrimRight(getNodeText(c, md), "\n")
+			lang := string(c.Language(md))
 			r.c.addVSpace(int(r.baseSize * 0.2))
-			r.c.drawCodeBlock(text, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
+			spans := r.tokenizeCodeBlock(text, lang, r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)
 			if child.NextSibling() != nil {
 				r.c.addVSpace(blockSpacing)
 			}
@@ -2140,10 +2316,18 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 				return ast.WalkStop, r.renderErr
 			}
 			return ast.WalkSkipChildren, nil
-		case *ast.CodeBlock, *ast.FencedCodeBlock:
+		case *ast.FencedCodeBlock:
+			text := strings.TrimRight(getNodeText(n, md), "\n")
+			lang := string(n.(*ast.FencedCodeBlock).Language(md))
+			r.c.addVSpace(4)
+			spans := r.tokenizeCodeBlock(text, lang, r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
+			return ast.WalkSkipChildren, nil
+		case *ast.CodeBlock:
 			text := strings.TrimRight(getNodeText(n, md), "\n")
 			r.c.addVSpace(4)
-			r.c.drawCodeBlock(text, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
+			spans := r.tokenizeCodeBlock(text, "", r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, r.c.margin, r.c.w-r.c.margin, r.baseSize*0.95)
 			return ast.WalkSkipChildren, nil
 		case *ast.Blockquote:
 			startY := r.c.cursorY
@@ -2328,19 +2512,20 @@ func DefaultCLIImagePolicy() ImagePolicy {
 // Zero values (or empty structs) will automatically populate with sensible defaults,
 // including a 1024px width, 48px margin, 16pt font, and a 32768px height limit.
 type RenderOptions struct {
-	Width            int               // Overall image width in pixels. Default is 1024, max is 32768.
-	Margin           int               // Border margin in pixels. Default is 48.
-	ZeroMargin       bool              // If true, intentionally use a 0 margin instead of the default.
-	BaseFontSize     float64           // Base font size in points. Default is 16, max is 1024.
-	Theme            Theme             // Color theme. Defaults to light theme.
-	Fonts            Fonts             // Font configuration. Defaults to bundled Go fonts.
-	LinkFootnotes    *bool             // Add footnotes for links. Defaults to true.
-	ImageFootnotes   *bool             // Add footnotes for images. Defaults to false.
-	BaseDir          string            // Base directory for resolving local image paths.
-	MaxHeight        int               // Maximum permitted output height (default 32768) to prevent OOM.
-	TableFitWidth    bool              // Expand canvas width to fit tables
-	ImagePolicy      *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
-	DiagnosticPolicy *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
+	Width               int               // Overall image width in pixels. Default is 1024, max is 32768.
+	Margin              int               // Border margin in pixels. Default is 48.
+	ZeroMargin          bool              // If true, intentionally use a 0 margin instead of the default.
+	BaseFontSize        float64           // Base font size in points. Default is 16, max is 1024.
+	Theme               Theme             // Color theme. Defaults to light theme.
+	Fonts               Fonts             // Font configuration. Defaults to bundled Go fonts.
+	LinkFootnotes       *bool             // Add footnotes for links. Defaults to true.
+	ImageFootnotes      *bool             // Add footnotes for images. Defaults to false.
+	BaseDir             string            // Base directory for resolving local image paths.
+	MaxHeight           int               // Maximum permitted output height (default 32768) to prevent OOM.
+	TableFitWidth       bool              // Expand canvas width to fit tables
+	ImagePolicy         *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
+	DiagnosticPolicy    *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
+	DisableHighlighting bool              // Disable syntax highlighting
 }
 
 // DiagnosticSeverity indicates the severity of a rendering issue.
@@ -2543,6 +2728,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 		baseDir:        opts.BaseDir,
 		imagePolicy:    *opts.ImagePolicy,
 		diagPolicy:     *opts.DiagnosticPolicy,
+		opts:           opts,
 	}
 	r.ensureImageResolvers()
 

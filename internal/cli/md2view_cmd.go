@@ -35,6 +35,7 @@ func Md2view(
 	footnoteImages *bool, // flag: --footnote-images Add footnotes for image destinations (default: false)
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
+	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
 	args ...string, // arg: [args]
 ) error {
 	var err error
@@ -76,7 +77,7 @@ func Md2view(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, baseDir)
 	if err != nil {
 		return err
 	}
