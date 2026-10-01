@@ -402,28 +402,30 @@ func (c *canvas) drawBlockquoteBar(topY, height int) {
 	draw.Draw(c.img, rect, image.NewUniform(c.th.QuoteBar), image.Point{}, draw.Src)
 }
 
-type CodeSpan struct {
+type codeSpan struct {
 	Text  string
 	Color color.Color
 }
 
-func SyntaxColorFor(tokType chroma.TokenType, palette SyntaxPalette, fallback color.Color) color.Color {
+func syntaxColorFor(tokType chroma.TokenType, palette SyntaxPalette, fallback color.Color) color.Color {
 	var c color.Color
-	switch tokType.Category() {
-	case chroma.Keyword:
-		c = palette.Keyword
-	case chroma.String:
-		c = palette.String
-	case chroma.Comment:
-		c = palette.Comment
-	case chroma.Name:
-		c = palette.Type
-	case chroma.Number:
-		c = palette.Number
-	case chroma.Operator, chroma.Punctuation:
-		c = palette.Punctuation
-	case chroma.NameBuiltin:
+	if tokType == chroma.NameBuiltin || tokType == chroma.NameBuiltinPseudo {
 		c = palette.Builtin
+	} else {
+		switch tokType.Category() {
+		case chroma.Name:
+			c = palette.Type
+		case chroma.Number:
+			c = palette.Number
+		case chroma.Operator, chroma.Punctuation:
+			c = palette.Punctuation
+		case chroma.Keyword:
+			c = palette.Keyword
+		case chroma.String:
+			c = palette.String
+		case chroma.Comment:
+			c = palette.Comment
+		}
 	}
 
 	if c == nil {
@@ -435,25 +437,25 @@ func SyntaxColorFor(tokType chroma.TokenType, palette SyntaxPalette, fallback co
 	return c
 }
 
-func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]CodeSpan {
+func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]codeSpan {
 	if disableHighlight || lang == "" {
-		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+		return [][]codeSpan{{{Text: text, Color: th.FG}}}
 	}
 	lexer := lexers.Get(lang)
 	if lexer == nil {
-		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+		return [][]codeSpan{{{Text: text, Color: th.FG}}}
 	}
 	lexer = chroma.Coalesce(lexer)
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
-		return [][]CodeSpan{{{Text: text, Color: th.FG}}}
+		return [][]codeSpan{{{Text: text, Color: th.FG}}}
 	}
 
-	var lines [][]CodeSpan
-	var currentLine []CodeSpan
+	var lines [][]codeSpan
+	var currentLine []codeSpan
 
 	for _, t := range iterator.Tokens() {
-		col := SyntaxColorFor(t.Type, th.Syntax, th.FG)
+		col := syntaxColorFor(t.Type, th.Syntax, th.FG)
 		parts := strings.Split(t.Value, "\n")
 		for i, part := range parts {
 			if i > 0 {
@@ -461,7 +463,7 @@ func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlig
 				currentLine = nil
 			}
 			if part != "" {
-				currentLine = append(currentLine, CodeSpan{Text: part, Color: col})
+				currentLine = append(currentLine, codeSpan{Text: part, Color: col})
 			}
 		}
 	}
@@ -469,18 +471,18 @@ func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlig
 		lines = append(lines, currentLine)
 	}
 	if len(lines) == 0 {
-		lines = append(lines, []CodeSpan{{Text: "", Color: th.FG}})
+		lines = append(lines, []codeSpan{{Text: "", Color: th.FG}})
 	}
 	return lines
 }
 
-func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]CodeSpan, maxWidth float64) [][]CodeSpan {
+func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]codeSpan, maxWidth float64) [][]codeSpan {
 	if maxWidth <= 0 {
 		return spans
 	}
-	var result [][]CodeSpan
+	var result [][]codeSpan
 	for _, line := range spans {
-		var currentLine []CodeSpan
+		var currentLine []codeSpan
 		currentWidth := 0.0
 
 		flush := func() {
@@ -503,7 +505,7 @@ func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]CodeSpan, maxWidth f
 				}
 				tokenWidth := measureWidth(ff, size, token)
 				if currentWidth+tokenWidth <= maxWidth {
-					currentLine = append(currentLine, CodeSpan{Text: token, Color: span.Color})
+					currentLine = append(currentLine, codeSpan{Text: token, Color: span.Color})
 					currentWidth += tokenWidth
 					continue
 				}
@@ -519,7 +521,7 @@ func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]CodeSpan, maxWidth f
 					if len(currentLine) > 0 && currentLine[len(currentLine)-1].Color == span.Color {
 						currentLine[len(currentLine)-1].Text += charStr
 					} else {
-						currentLine = append(currentLine, CodeSpan{Text: charStr, Color: span.Color})
+						currentLine = append(currentLine, codeSpan{Text: charStr, Color: span.Color})
 					}
 					currentWidth += charW
 				}
@@ -528,16 +530,16 @@ func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]CodeSpan, maxWidth f
 		if len(currentLine) > 0 {
 			result = append(result, currentLine)
 		} else if len(line) == 0 {
-			result = append(result, []CodeSpan{})
+			result = append(result, []codeSpan{})
 		}
 	}
 	if len(result) == 0 {
-		return [][]CodeSpan{{}}
+		return [][]codeSpan{{}}
 	}
 	return result
 }
 
-func (c *canvas) drawCodeBlock(spans [][]CodeSpan, left, right int, size float64) {
+func (c *canvas) drawCodeBlock(spans [][]codeSpan, left, right int, size float64) {
 	pad := 10
 	top := c.cursorY
 	mono := c.fonts.Mono
@@ -1658,7 +1660,7 @@ func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker
 		case *ast.FencedCodeBlock:
 			ensureMarker(startY + int(r.baseSize))
 			text := strings.TrimRight(getNodeText(c, md), "\n")
-			lang := string(c.Language(md))
+			lang := string(child.(*ast.FencedCodeBlock).Language(md))
 			r.c.addVSpace(int(r.baseSize * 0.2))
 			spans := r.tokenizeCodeBlock(text, lang, r.c.th, r.opts.DisableHighlighting)
 			r.c.drawCodeBlock(spans, contentLeft, r.c.w-r.c.margin, r.baseSize*0.95)

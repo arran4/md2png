@@ -98,7 +98,7 @@ func TestWrapCodeSpans(t *testing.T) {
 	}
 
 	text := "    spaced  out"
-	lines := wrapCodeSpans(fonts.Mono, 14, [][]CodeSpan{{{Text: text, Color: color.White}}}, 140)
+	lines := wrapCodeSpans(fonts.Mono, 14, [][]codeSpan{{{Text: text, Color: color.White}}}, 140)
 	if len(lines) == 0 || len(lines[0]) == 0 {
 		t.Fatalf("expected at least one line")
 	}
@@ -116,13 +116,13 @@ func TestWrapCodeSpans(t *testing.T) {
 		t.Fatalf("expected double spaces inside wrapped lines to be preserved, got %q", joined)
 	}
 
-	spans := []CodeSpan{
+	spans := []codeSpan{
 		{Text: "avery", Color: color.White},
 		{Text: "verylongtokenwithout", Color: color.Black},
 		{Text: "spaces", Color: color.White},
 	}
 
-	longLines := wrapCodeSpans(fonts.Mono, 14, [][]CodeSpan{spans}, 80)
+	longLines := wrapCodeSpans(fonts.Mono, 14, [][]codeSpan{spans}, 80)
 	if len(longLines) < 2 {
 		t.Fatalf("expected long token to wrap across multiple lines, got %d lines", len(longLines))
 	}
