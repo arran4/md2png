@@ -61,7 +61,7 @@ Requires Go 1.22 or newer.
 | `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
 | `--table-fit-width` | Expand canvas width to fit tables | `false` |
 | `--strict` | Fail when rendering emits a warning diagnostic | `false` |
-| `--disable-highlighting` | Disable syntax highlighting in code blocks | `false` |
+| `--disable-highlighting` | Disable syntax highlighting for fenced code blocks | `false` |
 
 ### Examples
 
