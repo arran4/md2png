@@ -1,7 +1,6 @@
 package md2png
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -602,95 +601,6 @@ func scaleImageToWidth(img image.Image, maxWidth int) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, maxWidth, height))
 	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, xdraw.Over, nil)
 	return dst
-}
-
-func wrapLines(ff *FontAndFace, size float64, text string, maxWidth float64) []string {
-	var lines []string
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		ln := scanner.Text()
-		if ln == "" {
-			lines = append(lines, "")
-			continue
-		}
-		if maxWidth <= 0 || measureWidth(ff, size, ln) <= maxWidth {
-			lines = append(lines, ln)
-			continue
-		}
-		wrapped := wrapLinePreservingSpaces(ff, size, ln, maxWidth)
-		lines = append(lines, wrapped...)
-	}
-	if len(lines) == 0 {
-		lines = append(lines, "")
-	}
-	return lines
-}
-
-func wrapLinePreservingSpaces(ff *FontAndFace, size float64, line string, maxWidth float64) []string {
-	if line == "" {
-		return []string{""}
-	}
-	tokens := splitTextPreserveSpaces(line)
-	var result []string
-	var current strings.Builder
-	var currentWidth float64
-
-	flush := func() {
-		result = append(result, current.String())
-		current.Reset()
-		currentWidth = 0
-	}
-
-	for _, token := range tokens {
-		if token == "" {
-			continue
-		}
-		tokenWidth := measureWidth(ff, size, token)
-		if tokenWidth > maxWidth {
-			if current.Len() > 0 {
-				flush()
-			}
-			result = append(result, breakLongToken(ff, size, token, maxWidth)...)
-			continue
-		}
-		if currentWidth+tokenWidth > maxWidth && current.Len() > 0 {
-			flush()
-		}
-		current.WriteString(token)
-		currentWidth += tokenWidth
-	}
-	if current.Len() > 0 {
-		flush()
-	}
-	if len(result) == 0 {
-		result = append(result, "")
-	}
-	return result
-}
-
-func breakLongToken(ff *FontAndFace, size float64, token string, maxWidth float64) []string {
-	var parts []string
-	var current strings.Builder
-	var width float64
-	for _, r := range token {
-		ch := string(r)
-		charWidth := measureWidth(ff, size, ch)
-		if width+charWidth > maxWidth && current.Len() > 0 {
-			parts = append(parts, current.String())
-			current.Reset()
-			width = 0
-		}
-		current.WriteString(ch)
-		width += charWidth
-	}
-	if current.Len() > 0 {
-		parts = append(parts, current.String())
-	}
-	if len(parts) == 0 {
-		parts = append(parts, token)
-	}
-	return parts
 }
 
 // ---- Markdown -> draw ----
