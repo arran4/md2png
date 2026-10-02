@@ -114,23 +114,57 @@ func TestSyntaxHighlightingTokensExtended(t *testing.T) {
 
 	// 11. Nested list highlighting asserting actual HTML/markdown token colours vs standard text blocks
 	nestedListMD := "- list item\n  ```go\n  func main() {}\n  ```"
-	nestedRes, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: false})
+	nestedResWith, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: false})
 	if err != nil {
 		t.Fatalf("Render nested failed: %v", err)
 	}
-	if nestedRes.Image == nil {
-		t.Fatalf("Expected image from nested render")
+	nestedResWithout, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render nested failed: %v", err)
+	}
+	if imagesEqual(nestedResWith.Image, nestedResWithout.Image) {
+		t.Fatalf("Nested list highlighting failed to change output image")
 	}
 
 	// 12. RenderOptions zero-value default allows highlighting
-	zeroRes, err := RenderWithDiagnostics([]byte("```go\nfunc main(){}\n```"), RenderOptions{})
+	mdZero := "```go\nfunc main(){}\n```"
+	zeroResWith, err := RenderWithDiagnostics([]byte(mdZero), RenderOptions{})
 	if err != nil {
 		t.Fatalf("Render zero-value failed: %v", err)
 	}
-	if zeroRes.Image == nil {
-		t.Fatalf("Expected image from zero-value options")
+	zeroResWithout, err := RenderWithDiagnostics([]byte(mdZero), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render zero-value without failed: %v", err)
+	}
+	if imagesEqual(zeroResWith.Image, zeroResWithout.Image) {
+		t.Fatalf("Zero-value options failed to apply highlighting")
 	}
 
+
+	// 13. Indented code must be proven plain (disabled highlighting shouldn't change the outcome)
+	indentedMD := "    func main() {}"
+	indentedResWith, err := RenderWithDiagnostics([]byte(indentedMD), RenderOptions{})
+	if err != nil {
+		t.Fatalf("Render indented with failed: %v", err)
+	}
+	indentedResWithout, err := RenderWithDiagnostics([]byte(indentedMD), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render indented without failed: %v", err)
+	}
+	if !imagesEqual(indentedResWith.Image, indentedResWithout.Image) {
+		t.Fatalf("Indented code images should be identical regardless of highlighting config")
+	}
+
+	// 14. Prove interior blank line survives wrapCodeSpans
+	spansBlank := r.tokenizeCodeBlock("line one\n\nline three", "", th, false)
+	fontsForBlank, _ := LoadFonts(FontConfig{SizeBase: 14})
+	wrappedBlank := wrapCodeSpans(fontsForBlank.Mono, 14, spansBlank, 800)
+	if len(wrappedBlank) != 3 {
+		t.Fatalf("expected 3 logical lines for blank line test, got %d", len(wrappedBlank))
+	}
+	if len(wrappedBlank[1]) != 0 {
+		t.Fatalf("expected the second wrapped line to remain empty")
+	}
 	// 10. Real tokenized highlighted long line wrapping while retaining multiple syntax colours
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
 	if err != nil {
@@ -806,4 +840,30 @@ func TestRendererFallbackBehaviour(t *testing.T) {
 	if img == nil {
 		t.Fatalf("expected an image returned")
 	}
+}
+
+func imagesEqual(a, b image.Image) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	b1 := a.Bounds()
+	b2 := b.Bounds()
+	if b1 != b2 {
+		return false
+	}
+	for y := b1.Min.Y; y < b1.Max.Y; y++ {
+		for x := b1.Min.X; x < b1.Max.X; x++ {
+			c1 := a.At(x, y)
+			c2 := b.At(x, y)
+			r1, g1, b1c, a1 := c1.RGBA()
+			r2, g2, b2c, a2 := c2.RGBA()
+			if r1 != r2 || g1 != g2 || b1c != b2c || a1 != a2 {
+				return false
+			}
+		}
+	}
+	return true
 }
