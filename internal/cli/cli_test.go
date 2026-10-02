@@ -46,6 +46,35 @@ func TestCLIValidationBehavior(t *testing.T) {
 	}
 }
 
+func TestCLIDisableHighlighting(t *testing.T) {
+	// Default absent behavior
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	if err != nil {
+		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
+	}
+	if opts.DisableHighlighting {
+		t.Errorf("expected DisableHighlighting to be false when absent")
+	}
+
+	// Disable mapping true
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), "")
+	if err2 != nil {
+		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
+	}
+	if !opts2.DisableHighlighting {
+		t.Errorf("expected DisableHighlighting to be mapped to true")
+	}
+
+	// Disable mapping false
+	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), "")
+	if err3 != nil {
+		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
+	}
+	if opts3.DisableHighlighting {
+		t.Errorf("expected DisableHighlighting to be mapped to false")
+	}
+}
+
 func TestCLITableFitWidthEquivalence(t *testing.T) {
 	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
 	if err != nil {
