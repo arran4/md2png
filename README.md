@@ -164,6 +164,16 @@ Enabling `--table-fit-width` (or setting `RenderOptions.TableFitWidth = true` vi
 ./md2png --in example.md --out example.png --width 1024 --table-fit-width
 ```
 
+### Syntax Highlighting
+
+By default, recognized fenced code blocks (e.g. ```go) are syntax-highlighted securely using the pure-Go [Chroma](https://github.com/alecthomas/chroma) lexer.
+
+- Highlighting is enabled by default for recognized languages. You do not need to enable it via a specific zero-value. Leaving the `RenderOptions{}` default leaves it fully enabled natively.
+- Pass `--disable-highlighting` in either CLI tools (or set `RenderOptions.DisableHighlighting` to `true`) to toggle highlighting off. All code blocks will render natively as plain text.
+- Unknown-language fenced blocks naturally fall back to ordinary monospace without syntax coloring.
+- Fenced blocks *without* a specified language fallback entirely to ordinary monospace.
+- Indented code blocks remain plain ordinary monospace format unconditionally as well.
+
 ### Structured Diagnostics and Safe Raw-HTML Policy
 
 When rendering documents with unresolvable resources or unsupported AST nodes, md2png adopts a "best-effort" approach by default. It degrades non-fatally and avoids rendering raw HTML markup to output text blocks (preventing injection of scripts or un-styled DOM structures).
