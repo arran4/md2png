@@ -440,10 +440,14 @@ func (r *renderer) plainCodeSpans(text string, th Theme) [][]codeSpan {
 	var lines [][]codeSpan
 	parts := strings.Split(text, "\n")
 	for _, part := range parts {
-		lines = append(lines, []codeSpan{{Text: part, Color: th.FG}})
+		if part == "" {
+			lines = append(lines, []codeSpan{})
+		} else {
+			lines = append(lines, []codeSpan{{Text: part, Color: th.FG}})
+		}
 	}
 	if len(lines) == 0 {
-		lines = append(lines, []codeSpan{{Text: "", Color: th.FG}})
+		lines = append(lines, []codeSpan{})
 	}
 	return lines
 }
@@ -478,12 +482,8 @@ func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlig
 			}
 		}
 	}
-	if len(currentLine) > 0 {
-		lines = append(lines, currentLine)
-	}
-	if len(lines) == 0 {
-		lines = append(lines, []codeSpan{{Text: "", Color: th.FG}})
-	}
+	// Add the final line unconditionally to match strings.Split("\n") behavior.
+	lines = append(lines, currentLine)
 	return lines
 }
 
