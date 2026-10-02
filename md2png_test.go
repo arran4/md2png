@@ -27,6 +27,105 @@ func (m mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m(req)
 }
 
+func TestSyntaxHighlightingTokensExtended(t *testing.T) {
+	r := &renderer{}
+	th := lightTheme
+	thDark := darkTheme
+
+	// 1. Multiline no-language fenced fallback
+	// 2. Multiline unknown-language fallback
+	// 3. Multiline recognized fenced code with DisableHighlighting: true
+	// 4. Multiline indented code remaining plain
+	// 5. Empty interior line preservation: "line one\n\nline three" remains three logical lines
+	testCases := []struct {
+		name     string
+		text     string
+		lang     string
+		disabled bool
+		lines    int
+	}{
+		{"no language", "line one\n\nline three", "", false, 3},
+		{"unknown lang", "line one\n\nline three", "unknownlanguage123", false, 3},
+		{"disabled highlighting", "line one\n\nline three", "go", true, 3},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			spans := r.tokenizeCodeBlock(tc.text, tc.lang, th, tc.disabled)
+			if len(spans) != tc.lines {
+				t.Fatalf("expected %d lines, got %d", tc.lines, len(spans))
+			}
+			if len(spans[1]) != 0 {
+				t.Fatalf("expected empty interior line to be length 0, got %d", len(spans[1]))
+			}
+			if len(spans[0]) == 0 || spans[0][0].Color != th.FG {
+				t.Fatalf("expected base FG color for fallback")
+			}
+		})
+	}
+
+	// 6. Light-theme highlighting (Go)
+	spansLight := r.tokenizeCodeBlock("func main() {\n\n}", "go", th, false)
+	hasKeywordLight := false
+	for _, s := range spansLight[0] {
+		if s.Text == "func" && s.Color != th.FG {
+			hasKeywordLight = true
+		}
+	}
+	if !hasKeywordLight {
+		t.Fatalf("did not find highlighted 'func' in light theme")
+	}
+
+	// 7. Dark-theme highlighting (Go)
+	spansDark := r.tokenizeCodeBlock("func main() {\n\n}", "go", thDark, false)
+	hasKeywordDark := false
+	for _, s := range spansDark[0] {
+		if s.Text == "func" && s.Color != thDark.FG {
+			hasKeywordDark = true
+		}
+	}
+	if !hasKeywordDark {
+		t.Fatalf("did not find highlighted 'func' in dark theme")
+	}
+
+	// 8. Second recognized language (e.g. JSON)
+	spansJSON := r.tokenizeCodeBlock("{\n  \"key\": \"value\"\n}", "json", th, false)
+	if len(spansJSON) != 3 {
+		t.Fatalf("expected 3 lines for JSON, got %d", len(spansJSON))
+	}
+
+	// 9. Zero/empty SyntaxPalette falling back safely to Theme.FG
+	thEmpty := Theme{FG: color.White}
+	spansEmpty := r.tokenizeCodeBlock("func main()", "go", thEmpty, false)
+	for _, s := range spansEmpty[0] {
+		if s.Text == "func" && s.Color != thEmpty.FG {
+			t.Fatalf("expected fallback to default FG color natively if palette missing securely")
+		}
+	}
+
+	// 10. Real tokenized highlighted long line wrapping while retaining multiple syntax colours
+	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("load fonts: %v", err)
+	}
+	longCode := "func VeryLongFunctionNameThatForcesWrappingOverMultipleLinesBecauseItsVeryLongAndHasTokens() {}"
+	spansLong := r.tokenizeCodeBlock(longCode, "go", th, false)
+	wrappedLong := wrapCodeSpans(fonts.Mono, 14, spansLong, 80)
+
+	if len(wrappedLong) < 2 {
+		t.Fatalf("expected highlighted long line to wrap, got %d lines", len(wrappedLong))
+	}
+	colorsSeen := make(map[color.Color]bool)
+	for _, l := range wrappedLong {
+		for _, s := range l {
+			colorsSeen[s.Color] = true
+		}
+	}
+	if len(colorsSeen) < 2 {
+		t.Fatalf("expected multiple syntax colors to survive real tokenized wrapping")
+	}
+}
+
 func TestSyntaxHighlighting(t *testing.T) {
 	md := "~~~go\nfunc main() {\n  fmt.Println(\"Hello\")\n}\n~~~\n\n~~~\nplain block\n~~~\n\n    indented block"
 
