@@ -93,6 +93,15 @@ func TestSyntaxHighlightingTokensExtended(t *testing.T) {
 	if len(spansJSON) != 3 {
 		t.Fatalf("expected 3 lines for JSON, got %d", len(spansJSON))
 	}
+	hasKeyJSON := false
+	for _, s := range spansJSON[1] {
+		if s.Text == "\"key\"" && s.Color != th.FG {
+			hasKeyJSON = true
+		}
+	}
+	if !hasKeyJSON {
+		t.Fatalf("did not find highlighted 'key' in JSON block")
+	}
 
 	// 9. Zero/empty SyntaxPalette falling back safely to Theme.FG
 	thEmpty := Theme{FG: color.White}
@@ -101,6 +110,25 @@ func TestSyntaxHighlightingTokensExtended(t *testing.T) {
 		if s.Text == "func" && s.Color != thEmpty.FG {
 			t.Fatalf("expected fallback to default FG color natively if palette missing securely")
 		}
+	}
+
+	// 11. Nested list highlighting asserting actual HTML/markdown token colours vs standard text blocks
+	nestedListMD := "- list item\n  ```go\n  func main() {}\n  ```"
+	nestedRes, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: false})
+	if err != nil {
+		t.Fatalf("Render nested failed: %v", err)
+	}
+	if nestedRes.Image == nil {
+		t.Fatalf("Expected image from nested render")
+	}
+
+	// 12. RenderOptions zero-value default allows highlighting
+	zeroRes, err := RenderWithDiagnostics([]byte("```go\nfunc main(){}\n```"), RenderOptions{})
+	if err != nil {
+		t.Fatalf("Render zero-value failed: %v", err)
+	}
+	if zeroRes.Image == nil {
+		t.Fatalf("Expected image from zero-value options")
 	}
 
 	// 10. Real tokenized highlighted long line wrapping while retaining multiple syntax colours
