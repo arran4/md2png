@@ -140,9 +140,8 @@ func TestSyntaxHighlightingTokensExtended(t *testing.T) {
 		t.Fatalf("Zero-value options failed to apply highlighting")
 	}
 
-
 	// 13. Indented code must be proven plain (disabled highlighting shouldn't change the outcome)
-	indentedMD := "    func main() {}"
+	indentedMD := "    func main() {\n        fmt.Println(\"plain\")\n    }"
 	indentedResWith, err := RenderWithDiagnostics([]byte(indentedMD), RenderOptions{})
 	if err != nil {
 		t.Fatalf("Render indented with failed: %v", err)
@@ -157,7 +156,10 @@ func TestSyntaxHighlightingTokensExtended(t *testing.T) {
 
 	// 14. Prove interior blank line survives wrapCodeSpans
 	spansBlank := r.tokenizeCodeBlock("line one\n\nline three", "", th, false)
-	fontsForBlank, _ := LoadFonts(FontConfig{SizeBase: 14})
+	fontsForBlank, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("load fonts for blank line test: %v", err)
+	}
 	wrappedBlank := wrapCodeSpans(fontsForBlank.Mono, 14, spansBlank, 800)
 	if len(wrappedBlank) != 3 {
 		t.Fatalf("expected 3 logical lines for blank line test, got %d", len(wrappedBlank))
