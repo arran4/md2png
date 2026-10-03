@@ -27,28 +27,278 @@ func (m mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m(req)
 }
 
-func TestWrapLinesPreservesIndentation(t *testing.T) {
+func TestSyntaxHighlightingTokensExtended(t *testing.T) {
+	r := &renderer{}
+	th := lightTheme
+	thDark := darkTheme
+
+	// 1. Multiline no-language fenced fallback
+	// 2. Multiline unknown-language fallback
+	// 3. Multiline recognized fenced code with DisableHighlighting: true
+	// 4. Multiline indented code remaining plain
+	// 5. Empty interior line preservation: "line one\n\nline three" remains three logical lines
+	testCases := []struct {
+		name     string
+		text     string
+		lang     string
+		disabled bool
+		lines    int
+	}{
+		{"no language", "line one\n\nline three", "", false, 3},
+		{"unknown lang", "line one\n\nline three", "unknownlanguage123", false, 3},
+		{"disabled highlighting", "line one\n\nline three", "go", true, 3},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			spans := r.tokenizeCodeBlock(tc.text, tc.lang, th, tc.disabled)
+			if len(spans) != tc.lines {
+				t.Fatalf("expected %d lines, got %d", tc.lines, len(spans))
+			}
+			if len(spans[1]) != 0 {
+				t.Fatalf("expected empty interior line to be length 0, got %d", len(spans[1]))
+			}
+			if len(spans[0]) == 0 || spans[0][0].Color != th.FG {
+				t.Fatalf("expected base FG color for fallback")
+			}
+		})
+	}
+
+	// 6. Light-theme highlighting (Go)
+	spansLight := r.tokenizeCodeBlock("func main() {\n\n}", "go", th, false)
+	hasKeywordLight := false
+	for _, s := range spansLight[0] {
+		if s.Text == "func" && s.Color != th.FG {
+			hasKeywordLight = true
+		}
+	}
+	if !hasKeywordLight {
+		t.Fatalf("did not find highlighted 'func' in light theme")
+	}
+
+	// 7. Dark-theme highlighting (Go)
+	spansDark := r.tokenizeCodeBlock("func main() {\n\n}", "go", thDark, false)
+	hasKeywordDark := false
+	for _, s := range spansDark[0] {
+		if s.Text == "func" && s.Color != thDark.FG {
+			hasKeywordDark = true
+		}
+	}
+	if !hasKeywordDark {
+		t.Fatalf("did not find highlighted 'func' in dark theme")
+	}
+
+	// 8. Second recognized language (e.g. JSON)
+	spansJSON := r.tokenizeCodeBlock("{\n  \"key\": \"value\"\n}", "json", th, false)
+	if len(spansJSON) != 3 {
+		t.Fatalf("expected 3 lines for JSON, got %d", len(spansJSON))
+	}
+	hasKeyJSON := false
+	for _, s := range spansJSON[1] {
+		if s.Text == "\"key\"" && s.Color != th.FG {
+			hasKeyJSON = true
+		}
+	}
+	if !hasKeyJSON {
+		t.Fatalf("did not find highlighted 'key' in JSON block")
+	}
+
+	// 9. Zero/empty SyntaxPalette falling back safely to Theme.FG
+	thEmpty := Theme{FG: color.White}
+	spansEmpty := r.tokenizeCodeBlock("func main()", "go", thEmpty, false)
+	for _, s := range spansEmpty[0] {
+		if s.Text == "func" && s.Color != thEmpty.FG {
+			t.Fatalf("expected fallback to default FG color natively if palette missing securely")
+		}
+	}
+
+	// 11. Nested list highlighting asserting actual HTML/markdown token colours vs standard text blocks
+	nestedListMD := "- list item\n  ```go\n  func main() {}\n  ```"
+	nestedResWith, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: false})
+	if err != nil {
+		t.Fatalf("Render nested failed: %v", err)
+	}
+	nestedResWithout, err := RenderWithDiagnostics([]byte(nestedListMD), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render nested failed: %v", err)
+	}
+	if imagesEqual(nestedResWith.Image, nestedResWithout.Image) {
+		t.Fatalf("Nested list highlighting failed to change output image")
+	}
+
+	// 12. RenderOptions zero-value default allows highlighting
+	mdZero := "```go\nfunc main(){}\n```"
+	zeroResWith, err := RenderWithDiagnostics([]byte(mdZero), RenderOptions{})
+	if err != nil {
+		t.Fatalf("Render zero-value failed: %v", err)
+	}
+	zeroResWithout, err := RenderWithDiagnostics([]byte(mdZero), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render zero-value without failed: %v", err)
+	}
+	if imagesEqual(zeroResWith.Image, zeroResWithout.Image) {
+		t.Fatalf("Zero-value options failed to apply highlighting")
+	}
+
+	// 13. Indented code must be proven plain (disabled highlighting shouldn't change the outcome)
+	indentedMD := "    func main() {\n        fmt.Println(\"plain\")\n    }"
+	indentedResWith, err := RenderWithDiagnostics([]byte(indentedMD), RenderOptions{})
+	if err != nil {
+		t.Fatalf("Render indented with failed: %v", err)
+	}
+	indentedResWithout, err := RenderWithDiagnostics([]byte(indentedMD), RenderOptions{DisableHighlighting: true})
+	if err != nil {
+		t.Fatalf("Render indented without failed: %v", err)
+	}
+	if !imagesEqual(indentedResWith.Image, indentedResWithout.Image) {
+		t.Fatalf("Indented code images should be identical regardless of highlighting config")
+	}
+
+	// 14. Prove interior blank line survives wrapCodeSpans
+	spansBlank := r.tokenizeCodeBlock("line one\n\nline three", "", th, false)
+	fontsForBlank, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("load fonts for blank line test: %v", err)
+	}
+	wrappedBlank := wrapCodeSpans(fontsForBlank.Mono, 14, spansBlank, 800)
+	if len(wrappedBlank) != 3 {
+		t.Fatalf("expected 3 logical lines for blank line test, got %d", len(wrappedBlank))
+	}
+	if len(wrappedBlank[1]) != 0 {
+		t.Fatalf("expected the second wrapped line to remain empty")
+	}
+	// 10. Real tokenized highlighted long line wrapping while retaining multiple syntax colours
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
 	if err != nil {
 		t.Fatalf("load fonts: %v", err)
 	}
+	longCode := "func VeryLongFunctionNameThatForcesWrappingOverMultipleLinesBecauseItsVeryLongAndHasTokens() {}"
+	spansLong := r.tokenizeCodeBlock(longCode, "go", th, false)
+	wrappedLong := wrapCodeSpans(fonts.Mono, 14, spansLong, 80)
+
+	if len(wrappedLong) < 2 {
+		t.Fatalf("expected highlighted long line to wrap, got %d lines", len(wrappedLong))
+	}
+	colorsSeen := make(map[color.Color]bool)
+	for _, l := range wrappedLong {
+		for _, s := range l {
+			colorsSeen[s.Color] = true
+		}
+	}
+	if len(colorsSeen) < 2 {
+		t.Fatalf("expected multiple syntax colors to survive real tokenized wrapping")
+	}
+}
+
+func TestSyntaxHighlighting(t *testing.T) {
+	md := "~~~go\nfunc main() {\n  fmt.Println(\"Hello\")\n}\n~~~\n\n~~~\nplain block\n~~~\n\n    indented block"
+
+	opts := RenderOptions{Width: 800, DisableHighlighting: false, Margin: 10}
+
+	// Preflight check: just ensuring it renders and lexes
+	res, err := RenderWithDiagnostics([]byte(md), opts)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if res.Image == nil {
+		t.Fatalf("expected image")
+	}
+
+	optsDisabled := RenderOptions{Width: 800, DisableHighlighting: true, Margin: 10}
+	resDisabled, err := RenderWithDiagnostics([]byte(md), optsDisabled)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if resDisabled.Image == nil {
+		t.Fatalf("expected image")
+	}
+}
+
+func TestSyntaxHighlightingTokens(t *testing.T) {
+	r := &renderer{}
+	th := lightTheme
+
+	spans := r.tokenizeCodeBlock("func main()", "go", th, false)
+	if len(spans) == 0 || len(spans[0]) < 2 {
+		t.Fatalf("expected highlighted tokens, got %v", spans)
+	}
+	hasKeyword := false
+	for _, s := range spans[0] {
+		if s.Text == "func" {
+			hasKeyword = true
+			if s.Color == th.FG {
+				t.Fatalf("expected keyword to be highlighted, got base FG color")
+			}
+		}
+	}
+	if !hasKeyword {
+		t.Fatalf("did not find expected 'func' token")
+	}
+
+	// test disabled
+	spansDisabled := r.tokenizeCodeBlock("func main()", "go", th, true)
+	if len(spansDisabled) != 1 || len(spansDisabled[0]) != 1 {
+		t.Fatalf("expected 1 span when disabled")
+	}
+	if spansDisabled[0][0].Color != th.FG {
+		t.Fatalf("expected base FG color when disabled")
+	}
+
+	// test fallback
+	spansFallback := r.tokenizeCodeBlock("func main()", "unknownlanguage123", th, false)
+	if len(spansFallback) != 1 || len(spansFallback[0]) != 1 {
+		t.Fatalf("expected 1 span for unknown language")
+	}
+	if spansFallback[0][0].Color != th.FG {
+		t.Fatalf("expected base FG color for unknown language")
+	}
+}
+
+func TestWrapCodeSpans(t *testing.T) {
+	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("load fonts: %v", err)
+	}
+
 	text := "    spaced  out"
-	lines := wrapLines(fonts.Mono, 14, text, 140)
-	if len(lines) == 0 {
+	lines := wrapCodeSpans(fonts.Mono, 14, [][]codeSpan{{{Text: text, Color: color.White}}}, 140)
+	if len(lines) == 0 || len(lines[0]) == 0 {
 		t.Fatalf("expected at least one line")
 	}
-	if !strings.HasPrefix(lines[0], "    ") {
-		t.Fatalf("expected leading spaces to be preserved, got %q", lines[0])
+	if !strings.HasPrefix(lines[0][0].Text, "    ") {
+		t.Fatalf("expected leading spaces to be preserved, got %q", lines[0][0].Text)
 	}
-	joined := strings.Join(lines, "")
+
+	joined := ""
+	for _, l := range lines {
+		for _, tok := range l {
+			joined += tok.Text
+		}
+	}
 	if !strings.Contains(joined, "  out") {
 		t.Fatalf("expected double spaces inside wrapped lines to be preserved, got %q", joined)
 	}
 
-	long := "averyverylongtokenwithoutspaces"
-	longLines := wrapLines(fonts.Mono, 14, long, 80)
+	spans := []codeSpan{
+		{Text: "avery", Color: color.White},
+		{Text: "verylongtokenwithout", Color: color.Black},
+		{Text: "spaces", Color: color.White},
+	}
+
+	longLines := wrapCodeSpans(fonts.Mono, 14, [][]codeSpan{spans}, 80)
 	if len(longLines) < 2 {
-		t.Fatalf("expected long token to wrap across multiple lines, got %v", longLines)
+		t.Fatalf("expected long token to wrap across multiple lines, got %d lines", len(longLines))
+	}
+
+	colorsSeen := make(map[color.Color]bool)
+	for _, l := range longLines {
+		for _, s := range l {
+			colorsSeen[s.Color] = true
+		}
+	}
+
+	if len(colorsSeen) < 2 {
+		t.Fatalf("expected multiple colors to survive wrapping")
 	}
 }
 
@@ -592,4 +842,30 @@ func TestRendererFallbackBehaviour(t *testing.T) {
 	if img == nil {
 		t.Fatalf("expected an image returned")
 	}
+}
+
+func imagesEqual(a, b image.Image) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	b1 := a.Bounds()
+	b2 := b.Bounds()
+	if b1 != b2 {
+		return false
+	}
+	for y := b1.Min.Y; y < b1.Max.Y; y++ {
+		for x := b1.Min.X; x < b1.Max.X; x++ {
+			c1 := a.At(x, y)
+			c2 := b.At(x, y)
+			r1, g1, b1c, a1 := c1.RGBA()
+			r2, g2, b2c, a2 := c2.RGBA()
+			if r1 != r2 || g1 != g2 || b1c != b2c || a1 != a2 {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -9,18 +9,19 @@ Subcommands:
 
 
 Flags:
-    --in *string              (default: stdin)     flag: Input Markdown file ( if empty)
-    --out *string             (default: out.png)   flag: Output image file (.png, .jpg, or .gif)
-    --width *int              (default: out.png)   flag: Output image width in pixels (0 for default)
-    --margin *int                                  flag: Margin in pixels (0 for default)
-    --pt *float64                                  flag: Base font size in points (paragraph) (0 for default)
-    --theme *string           (default: light)     flag: Theme: light|dark
-    --font *string            (default: light)     flag: Path to TTF for regular text (optional; default Go Regular)
-    --fontbold *string                             flag: Path to TTF for bold text (optional; default Go Bold)
-    --fontmono *string                             flag: Path to TTF for mono/code (optional; default Go Mono)
-    --footnote-links *bool    (default: true)      flag: Add footnotes for link destinations
-    --footnote-images *bool   (default: false)     flag: Add footnotes for image destinations
-    --max-height *int         (default: false)     flag: Maximum output height in pixels (0 for default)
-    --format *string                               flag: Output format: png, jpeg, or gif
-    --strict *bool                                 flag: Enable strict rendering (fail on warnings)
-    --table-fit-width *bool                        flag: Expand canvas width to fit tables
+    --in *string                   (default: stdin)     flag: Input Markdown file ( if empty)
+    --out *string                  (default: out.png)   flag: Output image file (.png, .jpg, or .gif)
+    --width *int                   (default: out.png)   flag: Output image width in pixels (0 for default)
+    --margin *int                                       flag: Margin in pixels (0 for default)
+    --pt *float64                                       flag: Base font size in points (paragraph) (0 for default)
+    --theme *string                (default: light)     flag: Theme: light|dark
+    --font *string                 (default: light)     flag: Path to TTF for regular text (optional; default Go Regular)
+    --fontbold *string                                  flag: Path to TTF for bold text (optional; default Go Bold)
+    --fontmono *string                                  flag: Path to TTF for mono/code (optional; default Go Mono)
+    --footnote-links *bool         (default: true)      flag: Add footnotes for link destinations
+    --footnote-images *bool        (default: false)     flag: Add footnotes for image destinations
+    --max-height *int              (default: false)     flag: Maximum output height in pixels (0 for default)
+    --format *string                                    flag: Output format: png, jpeg, or gif
+    --strict *bool                                      flag: Enable strict rendering (fail on warnings)
+    --table-fit-width *bool                             flag: Expand canvas width to fit tables
+    --disable-highlighting *bool                        flag: Disable syntax highlighting

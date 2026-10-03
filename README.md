@@ -61,6 +61,7 @@ Requires Go 1.22 or newer.
 | `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
 | `--table-fit-width` | Expand canvas width to fit tables | `false` |
 | `--strict` | Fail when rendering emits a warning diagnostic | `false` |
+| `--disable-highlighting` | Disable syntax highlighting for fenced code blocks | `false` |
 
 ### Examples
 
@@ -163,6 +164,16 @@ Enabling `--table-fit-width` (or setting `RenderOptions.TableFitWidth = true` vi
 # If the table inside example.md needs 1200px width, output width will be 1200 instead of 1024
 ./md2png --in example.md --out example.png --width 1024 --table-fit-width
 ```
+
+### Syntax Highlighting
+
+By default, recognized fenced code blocks (e.g. ```go) are syntax-highlighted securely using the pure-Go [Chroma](https://github.com/alecthomas/chroma) lexer.
+
+- Highlighting is enabled by default for recognized languages. You do not need to enable it via a specific zero-value. Leaving the `RenderOptions{}` default leaves it fully enabled natively.
+- Pass `--disable-highlighting` in either CLI tools (or set `RenderOptions.DisableHighlighting` to `true`) to toggle highlighting off. All code blocks will render natively as plain text.
+- Unknown-language fenced blocks naturally fall back to ordinary monospace without syntax coloring.
+- Fenced blocks *without* a specified language fallback entirely to ordinary monospace.
+- Indented code blocks remain plain ordinary monospace format unconditionally as well.
 
 ### Structured Diagnostics and Safe Raw-HTML Policy
 
@@ -271,7 +282,7 @@ Everything happens in memory; there is no HTML renderer or external process.
 
 - [x] Tables
 - [x] Inline images
-- [ ] Syntax highlighting
+- [x] Syntax highlighting
 - [ ] SVG output
 - [ ] Configurable themes via YAML/JSON
 

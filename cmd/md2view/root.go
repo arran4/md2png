@@ -69,24 +69,25 @@ func executeUsage(out io.Writer, templateName string, data any) error {
 
 type RootCmd struct {
 	*flag.FlagSet
-	Commands       map[string]func() Cmd
-	Version        string
-	Commit         string
-	Date           string
-	in             *string
-	width          *int
-	margin         *int
-	pt             *float64
-	theme          *string
-	fontRegular    *string
-	fontBold       *string
-	fontMono       *string
-	footnoteLinks  *bool
-	footnoteImages *bool
-	maxHeight      *int
-	tableFitWidth  *bool
-	args           []string
-	CommandAction  func(c *RootCmd) error
+	Commands            map[string]func() Cmd
+	Version             string
+	Commit              string
+	Date                string
+	in                  *string
+	width               *int
+	margin              *int
+	pt                  *float64
+	theme               *string
+	fontRegular         *string
+	fontBold            *string
+	fontMono            *string
+	footnoteLinks       *bool
+	footnoteImages      *bool
+	maxHeight           *int
+	tableFitWidth       *bool
+	disableHighlighting *bool
+	args                []string
+	CommandAction       func(c *RootCmd) error
 }
 
 func (c *RootCmd) Usage() {
@@ -213,9 +214,19 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.BoolFunc("disable-highlighting", "flag: Disable syntax highlighting", func(s string) error {
+		parsed, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.disableHighlighting = &val
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -455,6 +466,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				} else {
 					b := true
 					c.tableFitWidth = &b
+				}
+
+			case "disableHighlighting", "disable-highlighting":
+				if hasValue {
+					b, err := strconv.ParseBool(value)
+					if err != nil {
+						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+					}
+					c.disableHighlighting = &b
+				} else {
+					b := true
+					c.disableHighlighting = &b
 				}
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)

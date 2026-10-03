@@ -3,8 +3,8 @@ package md2png
 import (
 	"fmt"
 	"image"
-	"image/png"
 	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
