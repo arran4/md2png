@@ -254,6 +254,95 @@ func TestSyntaxHighlightingTokens(t *testing.T) {
 	}
 }
 
+func TestNormalizeCodeSpans(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    [][]codeSpan
+		tabWidth int
+		expected [][]codeSpan
+	}{
+		{
+			name: "no tabs",
+			input: [][]codeSpan{
+				{{Text: "hello world", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "hello world", Color: color.Black}},
+			},
+		},
+		{
+			name: "single leading tab",
+			input: [][]codeSpan{
+				{{Text: "\thello", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "    hello", Color: color.Black}},
+			},
+		},
+		{
+			name: "multiple tabs",
+			input: [][]codeSpan{
+				{{Text: "a\tb\tc", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "a   b   c", Color: color.Black}},
+			},
+		},
+		{
+			name: "custom tab width 8",
+			input: [][]codeSpan{
+				{{Text: "\thello", Color: color.Black}},
+			},
+			tabWidth: 8,
+			expected: [][]codeSpan{
+				{{Text: "        hello", Color: color.Black}},
+			},
+		},
+		{
+			name: "mixed colors",
+			input: [][]codeSpan{
+				{{Text: "func", Color: color.Black}, {Text: " main() {\t", Color: color.White}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "func", Color: color.Black}, {Text: " main() {   ", Color: color.White}},
+			},
+		},
+		{
+			name: "control characters removed/normalized",
+			input: [][]codeSpan{
+				{{Text: "hello\r\vworld\u2028!", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "helloworld!", Color: color.Black}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := normalizeCodeSpans(tt.input, tt.tabWidth)
+			if len(res) != len(tt.expected) {
+				t.Fatalf("expected %d lines, got %d", len(tt.expected), len(res))
+			}
+			for i, line := range res {
+				if len(line) != len(tt.expected[i]) {
+					t.Fatalf("line %d: expected %d spans, got %d", i, len(tt.expected[i]), len(line))
+				}
+				for j, span := range line {
+					if span.Text != tt.expected[i][j].Text || span.Color != tt.expected[i][j].Color {
+						t.Errorf("line %d span %d: expected {%q, %v}, got {%q, %v}", i, j, tt.expected[i][j].Text, tt.expected[i][j].Color, span.Text, span.Color)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestWrapCodeSpans(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
 	if err != nil {

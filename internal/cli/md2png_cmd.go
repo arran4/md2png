@@ -27,6 +27,7 @@ func Md2png(
 	strict *bool, // flag: --strict Enable strict rendering (fail on warnings)
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
 	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
+	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
 ) error {
 	var data []byte
 	var baseDir string
@@ -67,7 +68,7 @@ func Md2png(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, baseDir)
 	if err != nil {
 		return err
 	}

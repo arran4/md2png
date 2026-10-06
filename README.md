@@ -62,6 +62,7 @@ Requires Go 1.22 or newer.
 | `--table-fit-width` | Expand canvas width to fit tables | `false` |
 | `--strict` | Fail when rendering emits a warning diagnostic | `false` |
 | `--disable-highlighting` | Disable syntax highlighting for fenced code blocks | `false` |
+| `--code-tab-width` | Tab width in code blocks | `4` |
 
 ### Examples
 

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -449,42 +450,83 @@ func (r *renderer) plainCodeSpans(text string, th Theme) [][]codeSpan {
 	if len(lines) == 0 {
 		lines = append(lines, []codeSpan{})
 	}
-	return lines
+	return normalizeCodeSpans(lines, r.opts.CodeTabWidth)
 }
 
 func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]codeSpan {
-	if disableHighlight || lang == "" {
-		return r.plainCodeSpans(text, th)
-	}
-	lexer := lexers.Get(lang)
-	if lexer == nil {
-		return r.plainCodeSpans(text, th)
-	}
-	lexer = chroma.Coalesce(lexer)
-	iterator, err := lexer.Tokenise(nil, text)
-	if err != nil {
-		return r.plainCodeSpans(text, th)
-	}
-
 	var lines [][]codeSpan
-	var currentLine []codeSpan
-
-	for _, t := range iterator.Tokens() {
-		col := syntaxColorFor(t.Type, th.Syntax, th.FG)
-		parts := strings.Split(t.Value, "\n")
-		for i, part := range parts {
-			if i > 0 {
+	if disableHighlight || lang == "" {
+		lines = r.plainCodeSpans(text, th)
+	} else {
+		lexer := lexers.Get(lang)
+		if lexer == nil {
+			lines = r.plainCodeSpans(text, th)
+		} else {
+			lexer = chroma.Coalesce(lexer)
+			iterator, err := lexer.Tokenise(nil, text)
+			if err != nil {
+				lines = r.plainCodeSpans(text, th)
+			} else {
+				var currentLine []codeSpan
+				for _, t := range iterator.Tokens() {
+					col := syntaxColorFor(t.Type, th.Syntax, th.FG)
+					parts := strings.Split(t.Value, "\n")
+					for i, part := range parts {
+						if i > 0 {
+							lines = append(lines, currentLine)
+							currentLine = nil
+						}
+						if part != "" {
+							currentLine = append(currentLine, codeSpan{Text: part, Color: col})
+						}
+					}
+				}
+				// Add the final line unconditionally to match strings.Split("\n") behavior.
 				lines = append(lines, currentLine)
-				currentLine = nil
-			}
-			if part != "" {
-				currentLine = append(currentLine, codeSpan{Text: part, Color: col})
 			}
 		}
 	}
-	// Add the final line unconditionally to match strings.Split("\n") behavior.
-	lines = append(lines, currentLine)
-	return lines
+	return normalizeCodeSpans(lines, r.opts.CodeTabWidth)
+}
+
+func normalizeCodeSpans(lines [][]codeSpan, tabWidth int) [][]codeSpan {
+	if tabWidth <= 0 {
+		tabWidth = 4
+	}
+
+	var newLines [][]codeSpan
+	for _, line := range lines {
+		var newLine []codeSpan
+		col := 0
+		for _, span := range line {
+			var b strings.Builder
+			lastWritten := 0
+			for i, w := 0, 0; i < len(span.Text); i += w {
+				r, width := utf8.DecodeRuneInString(span.Text[i:])
+				w = width
+
+				if r == '\t' {
+					b.WriteString(span.Text[lastWritten:i])
+					spaces := tabWidth - (col % tabWidth)
+					b.WriteString(strings.Repeat(" ", spaces))
+					col += spaces
+					lastWritten = i + w
+				} else if r == '\r' || r == '\n' || r == '\f' || r == '\v' || r == '\u2028' || r == '\u2029' || r == '\u0085' {
+					b.WriteString(span.Text[lastWritten:i])
+					// Discard or normalize control whitespace to space.
+					lastWritten = i + w
+				} else {
+					col++
+				}
+			}
+			b.WriteString(span.Text[lastWritten:])
+			if b.Len() > 0 {
+				newLine = append(newLine, codeSpan{Text: b.String(), Color: span.Color})
+			}
+		}
+		newLines = append(newLines, newLine)
+	}
+	return newLines
 }
 
 func wrapCodeSpans(ff *FontAndFace, size float64, spans [][]codeSpan, maxWidth float64) [][]codeSpan {
@@ -2450,6 +2492,7 @@ type RenderOptions struct {
 	ImagePolicy         *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
 	DiagnosticPolicy    *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
 	DisableHighlighting bool              // Disable syntax highlighting
+	CodeTabWidth        int               // Tab width in code blocks. Default is 4.
 }
 
 // DiagnosticSeverity indicates the severity of a rendering issue.

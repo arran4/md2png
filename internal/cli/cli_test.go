@@ -10,7 +10,7 @@ func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 		t.Fatalf("expected image, got nil")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -48,7 +48,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 
 func TestCLIDisableHighlighting(t *testing.T) {
 	// Default absent behavior
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping true
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -66,7 +66,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping false
-	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), "")
+	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, "")
 	if err3 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
 	}
@@ -76,7 +76,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 }
 
 func TestCLITableFitWidthEquivalence(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCLITableFitWidthEquivalence(t *testing.T) {
 		t.Errorf("expected TableFitWidth to be true")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -108,7 +108,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
+	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if errCLI != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", errCLI)
 	}

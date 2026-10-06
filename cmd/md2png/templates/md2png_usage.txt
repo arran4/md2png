@@ -25,3 +25,4 @@ Flags:
     --strict *bool                                      flag: Enable strict rendering (fail on warnings)
     --table-fit-width *bool                             flag: Expand canvas width to fit tables
     --disable-highlighting *bool                        flag: Disable syntax highlighting
+    --code-tab-width *int          (default: 4)         flag: Tab width in code blocks
