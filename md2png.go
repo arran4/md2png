@@ -505,17 +505,18 @@ func normalizeCodeSpans(lines [][]codeSpan, tabWidth int) [][]codeSpan {
 				r, width := utf8.DecodeRuneInString(span.Text[i:])
 				w = width
 
-				if r == '\t' {
+				switch r {
+				case '\t':
 					b.WriteString(span.Text[lastWritten:i])
 					spaces := tabWidth - (col % tabWidth)
 					b.WriteString(strings.Repeat(" ", spaces))
 					col += spaces
 					lastWritten = i + w
-				} else if r == '\r' || r == '\n' || r == '\f' || r == '\v' || r == '\u2028' || r == '\u2029' || r == '\u0085' {
+				case '\r', '\n', '\f', '\v', '\u2028', '\u2029', '\u0085':
 					b.WriteString(span.Text[lastWritten:i])
 					// Discard or normalize control whitespace to space.
 					lastWritten = i + w
-				} else {
+				default:
 					col++
 				}
 			}
