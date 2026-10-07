@@ -8,8 +8,8 @@ func main() {
 	println("Hello")
     // Mixed spaces and tabs
 	println("Mixed")
-	println("Tabs\tafter\ttext")
-		println("Multiple\t\ttabs")
+	println("Tabs	after	text")
+		println("Multiple		tabs")
 }
 ```
 
@@ -48,4 +48,13 @@ Blank line below:
 {} [] () <> " ' \ / | & # % @ ~ ^ _ - + = : ; , . ? ! $ *
 Special controls and spaces:
 NBSP ( ) ThinSpace ( ) EmSpace ( )
+```
+
+## Printable UTF-8 set
+```go
+// Representative printable UTF-8 (ASCII letters/digits omitted, testing accents & symbols)
+const café = "café"
+const naïve = "naïve"
+const micro = "µ"
+const omega = "Ω"
 ```

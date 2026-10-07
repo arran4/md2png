@@ -122,3 +122,28 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Library width %d did not match CLI width %d", resLibrary.Image.Bounds().Dx(), resCLI.Image.Bounds().Dx())
 	}
 }
+
+func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
+	tests := []struct {
+		name         string
+		codeTabWidth *int
+		expected     int
+	}{
+		{"nil defaults to 4", nil, 4},
+		{"zero defaults to 4", ptrInt(0), 4},
+		{"negative defaults to 4", ptrInt(-1), 4},
+		{"positive uses value", ptrInt(8), 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if opts.CodeTabWidth != tt.expected {
+				t.Errorf("expected CodeTabWidth %d, got %d", tt.expected, opts.CodeTabWidth)
+			}
+		})
+	}
+}

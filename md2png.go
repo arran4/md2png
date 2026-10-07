@@ -450,7 +450,7 @@ func (r *renderer) plainCodeSpans(text string, th Theme) [][]codeSpan {
 	if len(lines) == 0 {
 		lines = append(lines, []codeSpan{})
 	}
-	return normalizeCodeSpans(lines, r.opts.CodeTabWidth)
+	return lines
 }
 
 func (r *renderer) tokenizeCodeBlock(text, lang string, th Theme, disableHighlight bool) [][]codeSpan {
