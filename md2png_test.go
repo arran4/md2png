@@ -1150,16 +1150,32 @@ func TestWrapCodeSpansWithTabExpansion(t *testing.T) {
 
 	// Expected wrapped lines based on the 50.0 width check.
 	// Since "x   Boundary" will split at "x   Boun" then "dary"
-	expectedSubstrings := []string{"x", "   ", "Boun", "dary"}
-	var foundSubstrings []string
+	expectedSubstrings := [][]string{
+		{"x", "   "},
+		{"Boun"},
+		{"dary"},
+	}
+	var foundSubstrings [][]string
 	for _, line := range wrapped {
+		var lineStrs []string
 		for _, span := range line {
-			foundSubstrings = append(foundSubstrings, span.Text)
+			lineStrs = append(lineStrs, span.Text)
 		}
+		foundSubstrings = append(foundSubstrings, lineStrs)
 	}
 
 	if len(foundSubstrings) != len(expectedSubstrings) {
-		t.Errorf("expected wrapped substrings %v, got %v", expectedSubstrings, foundSubstrings)
+		t.Fatalf("expected wrapped substrings %v, got %v", expectedSubstrings, foundSubstrings)
+	}
+	for i, line := range foundSubstrings {
+		if len(line) != len(expectedSubstrings[i]) {
+			t.Fatalf("line %d expected length %d, got %d", i, len(expectedSubstrings[i]), len(line))
+		}
+		for j, span := range line {
+			if span != expectedSubstrings[i][j] {
+				t.Errorf("line %d, span %d: expected %q, got %q", i, j, expectedSubstrings[i][j], span)
+			}
+		}
 	}
 }
 
