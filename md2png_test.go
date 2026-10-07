@@ -958,3 +958,133 @@ func imagesEqual(a, b image.Image) bool {
 	}
 	return true
 }
+
+func TestRendererTabExpansionPaths(t *testing.T) {
+	// Instead of testing raw pixel output, we instantiate a renderer and use its tokenization directly
+	// to ensure all logical paths go through the normalization logic with the proper configurations.
+	th, _ := ThemeByName("light")
+	r := &renderer{
+		opts: RenderOptions{CodeTabWidth: 4, DisableHighlighting: false},
+		c:    &canvas{th: th},
+	}
+
+	tests := []struct {
+		name       string
+		text       string
+		lang       string
+		disable    bool
+		wantColors bool // Should have multiple colors if highlighted
+		wantTexts  [][]string
+	}{
+		{
+			name: "highlighted go code",
+			text: "func main() {\n\tprintln()\n}",
+			lang: "go",
+			wantColors: true,
+			wantTexts: [][]string{
+				{"func", " ", "main", "()", " ", "{"},
+				{"    ", "println", "()"},
+				{"}"},
+			},
+		},
+		{
+			name: "no language plain block",
+			text: "foo\n\tbar",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo"},
+				{"    bar"},
+			},
+		},
+		{
+			name: "unknown language",
+			text: "foo\n\tbar",
+			lang: "foobar",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo"},
+				{"    bar"},
+			},
+		},
+		{
+			name: "DisableHighlighting=true",
+			text: "func main() {\n\tprintln()\n}",
+			lang: "go",
+			disable: true,
+			wantColors: false,
+			wantTexts: [][]string{
+				{"func main() {"},
+				{"    println()"},
+				{"}"},
+			},
+		},
+		{
+			name: "CRLF and mixed",
+			text: "foo \tbar\r\n\t\tbaz",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo     bar"},
+				{"        baz"},
+			},
+		},
+		{
+			name: "blank lines and repeated spaces",
+			text: "\n  foo  \n\n",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{},
+				{"  foo  "},
+				{},
+				{},
+			},
+		},
+		{
+			name: "punctuation and unicode",
+			text: "{} [] () <> \" ' \\ / | & # % @ ~ ^ _ - + = : ; , . ? ! $ *\nnaïve café µ Ω",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"{} [] () <> \" ' \\ / | & # % @ ~ ^ _ - + = : ; , . ? ! $ *"},
+				{"naïve café µ Ω"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r.opts.DisableHighlighting = tt.disable
+			spans := r.tokenizeCodeBlock(tt.text, tt.lang, th, tt.disable)
+
+			if len(spans) != len(tt.wantTexts) {
+				t.Fatalf("expected %d lines, got %d", len(tt.wantTexts), len(spans))
+			}
+
+			foundMultipleColors := false
+			var firstColor color.Color
+			for i, line := range spans {
+				if len(line) != len(tt.wantTexts[i]) {
+					t.Fatalf("line %d: expected %d spans, got %d", i, len(tt.wantTexts[i]), len(line))
+				}
+				for j, span := range line {
+					if span.Text != tt.wantTexts[i][j] {
+						t.Errorf("line %d span %d: expected text %q, got %q", i, j, tt.wantTexts[i][j], span.Text)
+					}
+					if i == 0 && j == 0 {
+						firstColor = span.Color
+					} else if firstColor != nil && span.Color != firstColor && span.Text != " " && span.Text != "" {
+						foundMultipleColors = true
+					}
+				}
+			}
+			if tt.wantColors && !foundMultipleColors {
+				t.Errorf("expected multiple colors for syntax highlighting, but all were the same")
+			}
+			if !tt.wantColors && foundMultipleColors {
+				t.Errorf("expected no syntax highlighting (single color), but found multiple colors")
+			}
+		})
+	}
+}
