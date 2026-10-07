@@ -1088,3 +1088,91 @@ func TestRendererTabExpansionPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestRendererTabExpansionIndentedAndNestedPaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		md       string
+		wantText string
+	}{
+		{
+			name: "indented code block",
+			md:   "    func main() {\n    \tprintln()\n    }",
+		},
+		{
+			name: "nested list fenced code",
+			md:   "* Item\n  * Item 2\n    ```go\n    func test() {\n    \treturn\n    }\n    ```",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := RenderOptions{
+				CodeTabWidth: 4,
+				Width:        1024,
+				Margin:       10,
+				BaseFontSize: 16,
+			}
+			res, err := RenderWithDiagnostics([]byte(tt.md), opts)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if res.Image == nil {
+				t.Fatalf("expected an image")
+			}
+			if len(res.Diagnostics) > 0 {
+				t.Fatalf("unexpected diagnostics: %v", res.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestWrapCodeSpansWithTabExpansion(t *testing.T) {
+	th, _ := ThemeByName("light")
+	r := &renderer{
+		opts: RenderOptions{CodeTabWidth: 4, DisableHighlighting: false},
+		c:    &canvas{th: th},
+	}
+
+	text := "x\tBoundary"
+	spans := r.tokenizeCodeBlock(text, "", th, true)
+
+	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("could not load fonts: %v", err)
+	}
+
+	maxWidth := 50.0
+	wrapped := wrapCodeSpans(fonts.Mono, 14, spans, maxWidth)
+
+	if len(wrapped) <= 1 {
+		t.Fatalf("expected text %q to wrap into multiple lines, got %d lines", text, len(wrapped))
+	}
+
+	// Expected wrapped lines based on the 50.0 width check.
+	// Since "x   Boundary" will split at "x   Boun" then "dary"
+	expectedSubstrings := []string{"x", "   ", "Boun", "dary"}
+	var foundSubstrings []string
+	for _, line := range wrapped {
+		for _, span := range line {
+			foundSubstrings = append(foundSubstrings, span.Text)
+		}
+	}
+
+	if len(foundSubstrings) != len(expectedSubstrings) {
+		t.Errorf("expected wrapped substrings %v, got %v", expectedSubstrings, foundSubstrings)
+	}
+}
+
+func TestTabColumnResetOnNewline(t *testing.T) {
+	lines := [][]codeSpan{
+		{{Text: "a\tword", Color: color.Black}},
+		{{Text: "ab\tword", Color: color.Black}},
+	}
+	res := normalizeCodeSpans(lines, 4)
+	if res[0][0].Text != "a   word" {
+		t.Errorf("line 1: expected 'a   word', got %q", res[0][0].Text)
+	}
+	if res[1][0].Text != "ab  word" {
+		t.Errorf("line 2: expected 'ab  word', got %q", res[1][0].Text)
+	}
+}
