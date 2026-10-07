@@ -1132,7 +1132,7 @@ func TestRendererTabExpansionIndentedAndNestedPaths(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to create golden file: %v", err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if err := png.Encode(f, res.Image); err != nil {
 					t.Fatalf("failed to encode golden file: %v", err)
 				}
