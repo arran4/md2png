@@ -86,6 +86,7 @@ type RootCmd struct {
 	maxHeight           *int
 	tableFitWidth       *bool
 	disableHighlighting *bool
+	codeTabWidth        *int
 	args                []string
 	CommandAction       func(c *RootCmd) error
 }
@@ -224,9 +225,19 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.Func("code-tab-width", "flag: Tab width in code blocks", func(s string) error {
+		parsed, err := strconv.Atoi(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.codeTabWidth = &val
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -479,6 +490,21 @@ func (c *RootCmd) Execute(args []string) (err error) {
 					b := true
 					c.disableHighlighting = &b
 				}
+
+			case "codeTabWidth", "code-tab-width":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				iv, err := strconv.Atoi(value)
+				if err != nil {
+					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
+				}
+				c.codeTabWidth = &iv
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)
 			}

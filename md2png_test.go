@@ -254,6 +254,95 @@ func TestSyntaxHighlightingTokens(t *testing.T) {
 	}
 }
 
+func TestNormalizeCodeSpans(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    [][]codeSpan
+		tabWidth int
+		expected [][]codeSpan
+	}{
+		{
+			name: "no tabs",
+			input: [][]codeSpan{
+				{{Text: "hello world", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "hello world", Color: color.Black}},
+			},
+		},
+		{
+			name: "single leading tab",
+			input: [][]codeSpan{
+				{{Text: "\thello", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "    hello", Color: color.Black}},
+			},
+		},
+		{
+			name: "multiple tabs",
+			input: [][]codeSpan{
+				{{Text: "a\tb\tc", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "a   b   c", Color: color.Black}},
+			},
+		},
+		{
+			name: "custom tab width 8",
+			input: [][]codeSpan{
+				{{Text: "\thello", Color: color.Black}},
+			},
+			tabWidth: 8,
+			expected: [][]codeSpan{
+				{{Text: "        hello", Color: color.Black}},
+			},
+		},
+		{
+			name: "mixed colors",
+			input: [][]codeSpan{
+				{{Text: "func", Color: color.Black}, {Text: " main() {\t", Color: color.White}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "func", Color: color.Black}, {Text: " main() {   ", Color: color.White}},
+			},
+		},
+		{
+			name: "control characters removed/normalized",
+			input: [][]codeSpan{
+				{{Text: "hello\r\vworld\u2028!", Color: color.Black}},
+			},
+			tabWidth: 4,
+			expected: [][]codeSpan{
+				{{Text: "helloworld!", Color: color.Black}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := normalizeCodeSpans(tt.input, tt.tabWidth)
+			if len(res) != len(tt.expected) {
+				t.Fatalf("expected %d lines, got %d", len(tt.expected), len(res))
+			}
+			for i, line := range res {
+				if len(line) != len(tt.expected[i]) {
+					t.Fatalf("line %d: expected %d spans, got %d", i, len(tt.expected[i]), len(line))
+				}
+				for j, span := range line {
+					if span.Text != tt.expected[i][j].Text || span.Color != tt.expected[i][j].Color {
+						t.Errorf("line %d span %d: expected {%q, %v}, got {%q, %v}", i, j, tt.expected[i][j].Text, tt.expected[i][j].Color, span.Text, span.Color)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestWrapCodeSpans(t *testing.T) {
 	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
 	if err != nil {
@@ -868,4 +957,267 @@ func imagesEqual(a, b image.Image) bool {
 		}
 	}
 	return true
+}
+
+func TestRendererTabExpansionPaths(t *testing.T) {
+	// Instead of testing raw pixel output, we instantiate a renderer and use its tokenization directly
+	// to ensure all logical paths go through the normalization logic with the proper configurations.
+	th, _ := ThemeByName("light")
+	r := &renderer{
+		opts: RenderOptions{CodeTabWidth: 4, DisableHighlighting: false},
+		c:    &canvas{th: th},
+	}
+
+	tests := []struct {
+		name       string
+		text       string
+		lang       string
+		disable    bool
+		wantColors bool // Should have multiple colors if highlighted
+		wantTexts  [][]string
+	}{
+		{
+			name: "highlighted go code",
+			text: "func main() {\n\tprintln()\n}",
+			lang: "go",
+			wantColors: true,
+			wantTexts: [][]string{
+				{"func", " ", "main", "()", " ", "{"},
+				{"    ", "println", "()"},
+				{"}"},
+			},
+		},
+		{
+			name: "no language plain block",
+			text: "foo\n\tbar",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo"},
+				{"    bar"},
+			},
+		},
+		{
+			name: "unknown language",
+			text: "foo\n\tbar",
+			lang: "foobar",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo"},
+				{"    bar"},
+			},
+		},
+		{
+			name: "DisableHighlighting=true",
+			text: "func main() {\n\tprintln()\n}",
+			lang: "go",
+			disable: true,
+			wantColors: false,
+			wantTexts: [][]string{
+				{"func main() {"},
+				{"    println()"},
+				{"}"},
+			},
+		},
+		{
+			name: "CRLF and mixed",
+			text: "foo \tbar\r\n\t\tbaz",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"foo     bar"},
+				{"        baz"},
+			},
+		},
+		{
+			name: "blank lines and repeated spaces",
+			text: "\n  foo  \n\n",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{},
+				{"  foo  "},
+				{},
+				{},
+			},
+		},
+		{
+			name: "punctuation and unicode",
+			text: "{} [] () <> \" ' \\ / | & # % @ ~ ^ _ - + = : ; , . ? ! $ *\nnaïve café µ Ω",
+			lang: "",
+			wantColors: false,
+			wantTexts: [][]string{
+				{"{} [] () <> \" ' \\ / | & # % @ ~ ^ _ - + = : ; , . ? ! $ *"},
+				{"naïve café µ Ω"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r.opts.DisableHighlighting = tt.disable
+			spans := r.tokenizeCodeBlock(tt.text, tt.lang, th, tt.disable)
+
+			if len(spans) != len(tt.wantTexts) {
+				t.Fatalf("expected %d lines, got %d", len(tt.wantTexts), len(spans))
+			}
+
+			foundMultipleColors := false
+			var firstColor color.Color
+			for i, line := range spans {
+				if len(line) != len(tt.wantTexts[i]) {
+					t.Fatalf("line %d: expected %d spans, got %d", i, len(tt.wantTexts[i]), len(line))
+				}
+				for j, span := range line {
+					if span.Text != tt.wantTexts[i][j] {
+						t.Errorf("line %d span %d: expected text %q, got %q", i, j, tt.wantTexts[i][j], span.Text)
+					}
+					if i == 0 && j == 0 {
+						firstColor = span.Color
+					} else if firstColor != nil && span.Color != firstColor && span.Text != " " && span.Text != "" {
+						foundMultipleColors = true
+					}
+				}
+			}
+			if tt.wantColors && !foundMultipleColors {
+				t.Errorf("expected multiple colors for syntax highlighting, but all were the same")
+			}
+			if !tt.wantColors && foundMultipleColors {
+				t.Errorf("expected no syntax highlighting (single color), but found multiple colors")
+			}
+		})
+	}
+}
+
+func TestRendererTabExpansionIndentedAndNestedPaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		golden   string
+		md       string
+	}{
+		{
+			name:   "indented_code_block",
+			golden: "testdata/golden/tab_expansion_indented.png",
+			md:     "    func main() {\n    \tprintln()\n    }",
+		},
+		{
+			name:   "nested_list_fenced_code",
+			golden: "testdata/golden/tab_expansion_nested.png",
+			md:     "* Item\n  * Item 2\n    ```go\n    func test() {\n    \treturn\n    }\n    ```",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := RenderOptions{
+				CodeTabWidth: 4,
+				Width:        800,
+				Margin:       10,
+				BaseFontSize: 16,
+			}
+			res, err := RenderWithDiagnostics([]byte(tt.md), opts)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if res.Image == nil {
+				t.Fatalf("expected an image")
+			}
+			if len(res.Diagnostics) > 0 {
+				t.Fatalf("unexpected diagnostics: %v", res.Diagnostics)
+			}
+
+			// Compare against golden to explicitly catch layout differences
+			// generated by a true tab expansion versus a tofu square literal tab string.
+			if os.Getenv("UPDATE_GOLDEN") == "1" {
+				f, err := os.Create(tt.golden)
+				if err != nil {
+					t.Fatalf("failed to create golden file: %v", err)
+				}
+				defer func() { _ = f.Close() }()
+				if err := png.Encode(f, res.Image); err != nil {
+					t.Fatalf("failed to encode golden file: %v", err)
+				}
+			} else {
+				goldenData, err := os.ReadFile(tt.golden)
+				if err != nil {
+					t.Fatalf("failed to read golden file: %v", err)
+				}
+				var actualBuf bytes.Buffer
+				if err := png.Encode(&actualBuf, res.Image); err != nil {
+					t.Fatalf("failed to encode actual image: %v", err)
+				}
+				if !bytes.Equal(goldenData, actualBuf.Bytes()) {
+					actualPath := tt.golden + ".actual.png"
+					_ = os.WriteFile(actualPath, actualBuf.Bytes(), 0644)
+					t.Errorf("image mismatch for %s. Actual image written to %s", tt.golden, actualPath)
+				}
+			}
+		})
+	}
+}
+
+func TestWrapCodeSpansWithTabExpansion(t *testing.T) {
+	th, _ := ThemeByName("light")
+	r := &renderer{
+		opts: RenderOptions{CodeTabWidth: 4, DisableHighlighting: false},
+		c:    &canvas{th: th},
+	}
+
+	text := "x\tBoundary"
+	spans := r.tokenizeCodeBlock(text, "", th, true)
+
+	fonts, err := LoadFonts(FontConfig{SizeBase: 14})
+	if err != nil {
+		t.Fatalf("could not load fonts: %v", err)
+	}
+
+	maxWidth := 50.0
+	wrapped := wrapCodeSpans(fonts.Mono, 14, spans, maxWidth)
+
+	if len(wrapped) <= 1 {
+		t.Fatalf("expected text %q to wrap into multiple lines, got %d lines", text, len(wrapped))
+	}
+
+	// Expected wrapped lines based on the 50.0 width check.
+	// Since "x   Boundary" will split at "x   Boun" then "dary"
+	expectedSubstrings := [][]string{
+		{"x", "   "},
+		{"Boun"},
+		{"dary"},
+	}
+	var foundSubstrings [][]string
+	for _, line := range wrapped {
+		var lineStrs []string
+		for _, span := range line {
+			lineStrs = append(lineStrs, span.Text)
+		}
+		foundSubstrings = append(foundSubstrings, lineStrs)
+	}
+
+	if len(foundSubstrings) != len(expectedSubstrings) {
+		t.Fatalf("expected wrapped substrings %v, got %v", expectedSubstrings, foundSubstrings)
+	}
+	for i, line := range foundSubstrings {
+		if len(line) != len(expectedSubstrings[i]) {
+			t.Fatalf("line %d expected length %d, got %d", i, len(expectedSubstrings[i]), len(line))
+		}
+		for j, span := range line {
+			if span != expectedSubstrings[i][j] {
+				t.Errorf("line %d, span %d: expected %q, got %q", i, j, expectedSubstrings[i][j], span)
+			}
+		}
+	}
+}
+
+func TestTabColumnResetOnNewline(t *testing.T) {
+	lines := [][]codeSpan{
+		{{Text: "a\tword", Color: color.Black}},
+		{{Text: "ab\tword", Color: color.Black}},
+	}
+	res := normalizeCodeSpans(lines, 4)
+	if res[0][0].Text != "a   word" {
+		t.Errorf("line 1: expected 'a   word', got %q", res[0][0].Text)
+	}
+	if res[1][0].Text != "ab  word" {
+		t.Errorf("line 2: expected 'ab  word', got %q", res[1][0].Text)
+	}
 }

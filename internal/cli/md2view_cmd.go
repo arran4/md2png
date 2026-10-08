@@ -36,6 +36,7 @@ func Md2view(
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
 	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
+	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
 	args ...string, // arg: [args]
 ) error {
 	var err error
@@ -77,7 +78,7 @@ func Md2view(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, baseDir)
 	if err != nil {
 		return err
 	}

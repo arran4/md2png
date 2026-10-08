@@ -20,6 +20,7 @@ func ConvertCommandArgsToRenderOptions(
 	maxHeight *int,
 	tableFitWidth *bool,
 	disableHighlighting *bool,
+	codeTabWidth *int,
 	baseDir string,
 ) (md2png.RenderOptions, error) {
 	themeName := "light"
@@ -98,6 +99,11 @@ func ConvertCommandArgsToRenderOptions(
 	}
 	if disableHighlighting != nil {
 		opts.DisableHighlighting = *disableHighlighting
+	}
+	if codeTabWidth != nil && *codeTabWidth > 0 {
+		opts.CodeTabWidth = *codeTabWidth
+	} else {
+		opts.CodeTabWidth = 4
 	}
 
 	return opts, nil

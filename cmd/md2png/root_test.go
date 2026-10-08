@@ -46,6 +46,8 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "--strict")
 	args = append(args, "--table-fit-width")
 	args = append(args, "--disable-highlighting")
+	args = append(args, "--code-tab-width")
+	args = append(args, "1")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -134,6 +136,11 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected disableHighlighting to be non-nil")
 	} else if *cmd.disableHighlighting != true {
 		t.Errorf("Expected disableHighlighting to be true, got '%v'", *cmd.disableHighlighting)
+	}
+	if cmd.codeTabWidth == nil {
+		t.Errorf("Expected codeTabWidth to be non-nil")
+	} else if *cmd.codeTabWidth != 1 {
+		t.Errorf("Expected codeTabWidth to be 1, got '%v'", *cmd.codeTabWidth)
 	}
 
 }
