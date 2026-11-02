@@ -556,44 +556,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Detect asset changes
-        id: diff
-        run: |
-          changed="$(git status --short -- examples/light-example.png examples/dark-example.png readme.png)"
-          if [ -n "$changed" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check head branch availability
-        id: head-branch
-        run: |
-          if git ls-remote --exit-code origin "refs/heads/${{ github.head_ref }}"; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Head branch ${{ github.head_ref }} not found on origin; skipping PR creation."
-          fi
-
-      - name: Create update pull request
-        if: steps.diff.outputs.changed == 'true' && steps.head-branch.outputs.exists == 'true' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.event.pull_request.head.ref, 'bot/update-doc-images/') && !startsWith(github.event.pull_request.head.ref, 'bot/update-examples/')
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Update documentation images"
-          title: "Update documentation images for #${{ github.event.pull_request.number }}"
-          body: |
-            Automated documentation image update for PR #${{ github.event.pull_request.number }}.
-            This PR refreshes the light and dark theme example renders and the README render so they match the latest Markdown changes.
-          branch: bot/update-doc-images/${{ github.head_ref }}
-          base: ${{ github.head_ref }}
-          add-paths: |
-            examples/light-example.png
-            examples/dark-example.png
-            readme.png
-          delete-branch: true
-
       - name: Share preview location
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v9
@@ -642,6 +604,111 @@ jobs:
                 repo,
                 issue_number,
                 body,
+              });
+            }
+
+  # Generated documentation is reviewed once per main branch state, not once
+  # per feature PR. Feature PRs retain the previews above without child PRs.
+  refresh-docs-on-main:
+    name: Refresh documentation images on main
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Render documentation images from main
+        run: |
+          set -euo pipefail
+          mkdir -p examples
+          go run ./cmd/md2png --in README.md --out readme.png
+          go run ./cmd/md2png --in testdata/all_features.md --out examples/light-example.png --theme light
+          go run ./cmd/md2png --in testdata/all_features.md --out examples/dark-example.png --theme dark
+
+      - name: Create or update canonical documentation PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: refresh generated documentation images"
+          title: "docs: refresh generated documentation images"
+          body: |
+            Regenerated README and light/dark example images using the current
+            default branch. This single PR replaces per-feature-PR image updates.
+
+            The action updates this PR when new main commits change the images
+            and closes it when there is no longer a difference.
+          branch: bot/update-doc-images/main
+          base: main
+          add-paths: |
+            readme.png
+            examples/light-example.png
+            examples/dark-example.png
+          delete-branch: true
+
+      # Only run cleanup after rendering and creating/updating the canonical PR
+      # has succeeded. This avoids dropping a needed update after a render failure.
+      - name: Close superseded per-parent documentation PRs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const pr of open) {
+              if (pr.user?.login !== 'github-actions[bot]' ||
+                  pr.base.ref !== 'main' ||
+                  !pr.head.ref.startsWith('bot/update-doc-images/') ||
+                  pr.head.ref === 'bot/update-doc-images/main') {
+                continue;
+              }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number,
+                body: 'Superseded by the documentation images regenerated from the current main branch. Future changes use the single canonical documentation refresh PR.',
+              });
+              await github.rest.pulls.update({
+                owner, repo, pull_number: pr.number, state: 'closed',
+              });
+            }
+
+  # An abandoned feature PR cannot contribute its preview images to main.
+  # For merged PRs, refresh-docs-on-main is responsible for reconciliation.
+  cleanup-abandoned-doc-prs:
+    name: Close image PRs from abandoned parent PRs
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const parent = context.payload.pull_request;
+            const expectedHead = `bot/update-doc-images/${parent.head.ref}`;
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const pr of open) {
+              if (pr.user?.login !== 'github-actions[bot]' ||
+                  pr.base.ref !== 'main' ||
+                  pr.head.ref !== expectedHead) {
+                continue;
+              }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number,
+                body: `Closing obsolete generated images because parent PR #${parent.number} was closed without merging.`,
+              });
+              await github.rest.pulls.update({
+                owner, repo, pull_number: pr.number, state: 'closed',
               });
             }
 
