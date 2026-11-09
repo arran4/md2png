@@ -2511,8 +2511,9 @@ type RenderOptions struct {
 	TableFitWidth       bool              // Expand canvas width to fit tables
 	ImagePolicy         *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
 	DiagnosticPolicy    *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
-	DisableHighlighting bool              // Disable syntax highlighting
-	CodeTabWidth        int               // Tab width in code blocks. Default is 4.
+	DisableHighlighting   bool              // Disable syntax highlighting
+	CodeTabWidth          int               // Tab width in code blocks. Default is 4.
+	TransparentBackground bool              // Explicitly use a transparent background (overrides Theme.BG)
 }
 
 // DiagnosticSeverity indicates the severity of a rendering issue.
@@ -2623,6 +2624,9 @@ func normalizeRenderOptions(opts *RenderOptions) error {
 
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
+	}
+	if opts.TransparentBackground {
+		opts.Theme.BG = color.RGBA{0, 0, 0, 0}
 	}
 	if opts.Theme.Link == nil {
 		if isThemeDark(opts.Theme.BG) {

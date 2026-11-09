@@ -79,6 +79,7 @@ type RootCmd struct {
 	pt                  *float64
 	theme               *string
 	themeFile           *string
+	transparent         *bool
 	fontRegular         *string
 	fontBold            *string
 	fontMono            *string
@@ -170,6 +171,16 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.BoolFunc("transparent", "flag: Explicit transparent page background", func(s string) error {
+		parsed, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.transparent = &val
+		return nil
+	})
+
 	c.Func("font", "flag: Path to TTF for regular text (optional; default Go Regular)", func(s string) error {
 		c.fontRegular = &s
 		return nil
@@ -247,7 +258,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -413,6 +424,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				s := value
 				c.themeFile = &s
+
+			case "transparent":
+				if hasValue {
+					b, err := strconv.ParseBool(value)
+					if err != nil {
+						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+					}
+					c.transparent = &b
+				} else {
+					b := true
+					c.transparent = &b
+				}
 
 			case "fontRegular", "font":
 				if !hasValue {

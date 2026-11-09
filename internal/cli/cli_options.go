@@ -13,6 +13,7 @@ func ConvertCommandArgsToRenderOptions(
 	pt *float64,
 	theme *string,
 	themeFile *string,
+	transparent *bool,
 	fontRegular *string,
 	fontBold *string,
 	fontMono *string,
@@ -77,6 +78,10 @@ func ConvertCommandArgsToRenderOptions(
 		BaseDir:          baseDir,
 		ImagePolicy:      &policy,
 		DiagnosticPolicy: &diagPolicy,
+	}
+
+	if transparent != nil && *transparent {
+		opts.TransparentBackground = true
 	}
 
 	if width != nil {
