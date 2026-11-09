@@ -314,12 +314,13 @@ func (ff *FontAndFace) segmentRuns(s string) []textRun {
 
 	for _, r := range s {
 		targetFnt := ff.FindFaceForRune(r)
-		if currentFnt == nil {
+		switch currentFnt {
+		case nil:
 			currentFnt = targetFnt
 			currentRun = append(currentRun, r)
-		} else if currentFnt == targetFnt {
+		case targetFnt:
 			currentRun = append(currentRun, r)
-		} else {
+		default:
 			runs = append(runs, textRun{fnt: currentFnt, text: string(currentRun)})
 			currentFnt = targetFnt
 			currentRun = []rune{r}
