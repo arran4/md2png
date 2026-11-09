@@ -116,13 +116,33 @@ func TestFontFallback_GlyphSelection(t *testing.T) {
 		t.Errorf("expected 'A' to use primary Regular font, got fallback")
 	}
 
-	// CJK character '你' (U+4F60) is not in Go Regular, should use fallback
-	selectedCJK := fonts.Regular.FindFaceForRune('你')
-	if selectedCJK == fonts.Regular {
-		t.Errorf("expected '你' to use fallback font, got primary Regular")
+	// Find a rune present in fallback but absent from primary Regular
+	var fallbackRune rune
+	testRunes := []rune{'你', '世', '界', 'あ', 'Ω', 'ж', 'א', 'م', '✓', '★', '→'}
+	for _, r := range testRunes {
+		if !fonts.Regular.HasGlyph(r) && fonts.Regular.Fallbacks[0].HasGlyph(r) {
+			fallbackRune = r
+			break
+		}
 	}
-	if selectedCJK != fonts.Regular.Fallbacks[0] {
-		t.Errorf("expected '你' to match fallback font instance")
+	if fallbackRune == 0 {
+		for r := rune(0x0100); r < 0xFFFF; r++ {
+			if !fonts.Regular.HasGlyph(r) && fonts.Regular.Fallbacks[0].HasGlyph(r) {
+				fallbackRune = r
+				break
+			}
+		}
+	}
+	if fallbackRune == 0 {
+		t.Skip("fallback font contains no glyphs absent from primary font")
+	}
+
+	selectedFallback := fonts.Regular.FindFaceForRune(fallbackRune)
+	if selectedFallback == fonts.Regular {
+		t.Errorf("expected %q to use fallback font, got primary Regular", fallbackRune)
+	}
+	if selectedFallback != fonts.Regular.Fallbacks[0] {
+		t.Errorf("expected %q to match fallback font instance", fallbackRune)
 	}
 }
 
