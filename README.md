@@ -72,6 +72,15 @@ Render Markdown from disk:
 ./md2png --in example.md --out example.png
 ```
 
+Render directly to scalable vector SVG:
+
+```bash
+./md2png --in example.md --out example.svg
+```
+
+> [!NOTE]
+> **SVG Text and Font Portability Limitations**: Text runs in SVG output are rendered as scalable `<text>` elements styled with standard system font stacks (`-apple-system`, `Segoe UI`, `Roboto`, `Consolas`, monospace). Because different client environments and SVG viewers compute system font metrics with slight variations compared to local embedded TTF/OTF fonts, text positioning and wrapping are approximate. Custom fonts specified via `--font` are not embedded as SVG webfonts.
+
 Dark theme, wider frame, larger type:
 
 ```bash

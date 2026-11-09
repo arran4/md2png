@@ -2,6 +2,7 @@ package md2png
 
 import (
 	"encoding/xml"
+	"image/color"
 	"strings"
 	"testing"
 )
@@ -107,5 +108,61 @@ func TestRenderSVG_XMLEscaping(t *testing.T) {
 	}
 	if err := xml.Unmarshal(svgBytes, &parsed); err != nil {
 		t.Fatalf("failed to parse SVG containing escaped entities: %v", err)
+	}
+}
+
+func TestColorToHexOrRGBA_UnpremultipliedAlpha(t *testing.T) {
+	// Opaque color should serialize to hex
+	opaque := color.RGBA{R: 0x12, G: 0x34, B: 0x56, A: 0xFF}
+	if hex := colorToHexOrRGBA(opaque); hex != "#123456" {
+		t.Errorf("expected #123456, got %s", hex)
+	}
+
+	// Partially transparent color: NRGBA has R=200, G=100, B=50, A=128 (~0.502)
+	// Must NOT be premultiplied to R=100, G=50, B=25
+	semi := color.NRGBA{R: 200, G: 100, B: 50, A: 128}
+	rgbaStr := colorToHexOrRGBA(semi)
+	if !strings.HasPrefix(rgbaStr, "rgba(200, 100, 50,") {
+		t.Errorf("expected unpremultiplied rgba(200, 100, 50, ...), got %s", rgbaStr)
+	}
+
+	// Fully transparent should be "none"
+	trans := color.RGBA{R: 0, G: 0, B: 0, A: 0}
+	if none := colorToHexOrRGBA(trans); none != "none" {
+		t.Errorf("expected none for transparent color, got %s", none)
+	}
+
+	// Nil color should be "none"
+	if none := colorToHexOrRGBA(nil); none != "none" {
+		t.Errorf("expected none for nil color, got %s", none)
+	}
+}
+
+func TestRenderSVG_FontStylesAndClasses(t *testing.T) {
+	md := `
+**Bold text**
+*Italic text*
+***Bold italic text***
+` + "```go\nvar x = 42\n```" + `
+- [ ] Unchecked item
+- [x] Checked item
+`
+	svgBytes, err := RenderSVG([]byte(md), RenderOptions{Width: 600})
+	if err != nil {
+		t.Fatalf("RenderSVG failed: %v", err)
+	}
+	svgStr := string(svgBytes)
+
+	if !strings.Contains(svgStr, `font-weight="bold"`) {
+		t.Errorf("expected font-weight=\"bold\" in SVG output")
+	}
+	if !strings.Contains(svgStr, `font-style="italic"`) {
+		t.Errorf("expected font-style=\"italic\" in SVG output")
+	}
+	if !strings.Contains(svgStr, `class="mono"`) {
+		t.Errorf("expected class=\"mono\" for monospace code blocks in SVG output")
+	}
+	if !strings.Contains(svgStr, `<line `) {
+		t.Errorf("expected <line ...> elements for checked task list checkbox in SVG output")
 	}
 }
