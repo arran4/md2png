@@ -24,7 +24,7 @@ func createSizedTestImage(t *testing.T, dir string, name string, w, h int) strin
 	if err != nil {
 		t.Fatalf("failed to create test image: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := png.Encode(f, img); err != nil {
 		t.Fatalf("failed to encode test image: %v", err)
 	}
