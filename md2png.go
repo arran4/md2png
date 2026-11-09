@@ -138,7 +138,6 @@ var (
 		},
 	}
 	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
-	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
 )
 
 // ---- Font loading ----
