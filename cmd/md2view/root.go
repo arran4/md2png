@@ -188,11 +188,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
-	c.Func("font-fallback", "flag: Comma paths to fallback TTF/OTF fonts", func(s string) error {
-		c.fontFallback = &s
-		return nil
-	})
-	c.Func("separated", "flag: Comma paths to fallback TTF/OTF fonts", func(s string) error {
+	c.Func("font-fallback", "flag: Comma separated paths to fallback TTF/OTF fonts", func(s string) error {
 		c.fontFallback = &s
 		return nil
 	})
@@ -474,7 +470,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				s := value
 				c.fontBoldItalic = &s
 
-			case "fontFallback", "font-fallback", "separated":
+			case "fontFallback", "font-fallback":
 				if !hasValue {
 					if i+1 < len(args) {
 						value = args[i+1]
