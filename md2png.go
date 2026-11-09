@@ -19,13 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -36,8 +36,13 @@ import (
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gobolditalic"
+	"golang.org/x/image/font/gofont/goitalic"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
+	"golang.org/x/image/math/fixed"
 )
 
 // Simple, dependency-light Markdown -> raster image renderer.
@@ -133,35 +138,59 @@ var (
 // ---- Font loading ----
 
 type FontAndFace struct {
-	Font     *truetype.Font
-	Face     font.Face
-	baseSize float64
+	Font      *truetype.Font // Deprecated: legacy truetype font representation, preserved for backward compatibility
+	SFNT      *sfnt.Font     // Modern OpenType/sfnt font representation
+	Face      font.Face      // Active font face at baseSize
+	baseSize  float64
+	Fallbacks []*FontAndFace
+
+	mu    sync.RWMutex
+	faces map[int]font.Face
 }
 
 type Fonts struct {
-	Regular *FontAndFace
-	Bold    *FontAndFace
-	Mono    *FontAndFace
+	Regular    *FontAndFace
+	Bold       *FontAndFace
+	Mono       *FontAndFace
+	Italic     *FontAndFace
+	BoldItalic *FontAndFace
+	Fallbacks  []*FontAndFace
 }
 
 type FontConfig struct {
-	RegularPath string
-	BoldPath    string
-	MonoPath    string
-	SizeBase    float64 // paragraph font size in pt
+	RegularPath    string
+	BoldPath       string
+	MonoPath       string
+	ItalicPath     string
+	BoldItalicPath string
+	SizeBase       float64  // paragraph font size in pt
+	FallbackPaths  []string // fallback TTF/OTF font paths for missing glyphs
 }
 
-func loadFontAndFace(ttfBytes []byte, size float64) (*FontAndFace, error) {
-	ft, err := truetype.Parse(ttfBytes)
+func loadFontAndFace(fontBytes []byte, size float64) (*FontAndFace, error) {
+	ot, err := opentype.Parse(fontBytes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse font: %w", err)
 	}
-	face := truetype.NewFace(ft, &truetype.Options{Size: size, DPI: 96, Hinting: font.HintingFull})
+	face, err := opentype.NewFace(ot, &opentype.FaceOptions{
+		Size:    size,
+		DPI:     96,
+		Hinting: font.HintingFull,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create font face: %w", err)
+	}
+
+	// Legacy truetype parse for backwards compatibility
+	tt, _ := truetype.Parse(fontBytes)
+
 	return &FontAndFace{
-		Font:     ft,
+		Font:     tt,
+		SFNT:     ot,
 		Face:     face,
 		baseSize: size,
-	}, err
+		faces:    make(map[int]font.Face),
+	}, nil
 }
 
 func loadFonts(cfg FontConfig) (Fonts, error) {
@@ -171,62 +200,188 @@ func loadFonts(cfg FontConfig) (Fonts, error) {
 	var f Fonts
 	var err error
 
-	// RegularFace
-	if cfg.RegularPath != "" {
-		b, e := os.ReadFile(cfg.RegularPath)
+	loadStyle := func(path string, embedded []byte) (*FontAndFace, error) {
+		if path != "" {
+			b, e := os.ReadFile(path)
+			if e != nil {
+				return nil, e
+			}
+			return loadFontAndFace(b, cfg.SizeBase)
+		}
+		return loadFontAndFace(embedded, cfg.SizeBase)
+	}
+
+	if f.Regular, err = loadStyle(cfg.RegularPath, goregular.TTF); err != nil {
+		return f, err
+	}
+	if f.Bold, err = loadStyle(cfg.BoldPath, gobold.TTF); err != nil {
+		return f, err
+	}
+	if f.Mono, err = loadStyle(cfg.MonoPath, gomono.TTF); err != nil {
+		return f, err
+	}
+	if f.Italic, err = loadStyle(cfg.ItalicPath, goitalic.TTF); err != nil {
+		return f, err
+	}
+	if f.BoldItalic, err = loadStyle(cfg.BoldItalicPath, gobolditalic.TTF); err != nil {
+		return f, err
+	}
+
+	var fallbacks []*FontAndFace
+	for _, fbPath := range cfg.FallbackPaths {
+		if fbPath == "" {
+			continue
+		}
+		b, e := os.ReadFile(fbPath)
 		if e != nil {
-			return f, e
+			return f, fmt.Errorf("failed to read fallback font %q: %w", fbPath, e)
 		}
-		f.Regular, err = loadFontAndFace(b, cfg.SizeBase)
-		if err != nil {
-			return f, err
+		fb, e := loadFontAndFace(b, cfg.SizeBase)
+		if e != nil {
+			return f, fmt.Errorf("failed to load fallback font %q: %w", fbPath, e)
 		}
-	} else {
-		f.Regular, err = loadFontAndFace(goregular.TTF, cfg.SizeBase)
-		if err != nil {
-			return f, err
+		fallbacks = append(fallbacks, fb)
+	}
+	f.Fallbacks = fallbacks
+
+	attachFallbacks := func(target *FontAndFace) {
+		if target != nil {
+			target.Fallbacks = append(target.Fallbacks, fallbacks...)
 		}
 	}
-	// Bold
-	if cfg.BoldPath != "" {
-		b, e := os.ReadFile(cfg.BoldPath)
-		if e != nil {
-			return f, e
-		}
-		f.Bold, err = loadFontAndFace(b, cfg.SizeBase)
-		if err != nil {
-			return f, err
-		}
-	} else {
-		f.Bold, err = loadFontAndFace(gobold.TTF, cfg.SizeBase)
-		if err != nil {
-			return f, err
-		}
-	}
-	// Mono
-	if cfg.MonoPath != "" {
-		b, e := os.ReadFile(cfg.MonoPath)
-		if e != nil {
-			return f, e
-		}
-		f.Mono, err = loadFontAndFace(b, cfg.SizeBase)
-		if err != nil {
-			return f, err
-		}
-	} else {
-		f.Mono, err = loadFontAndFace(gomono.TTF, cfg.SizeBase)
-		if err != nil {
-			return f, err
-		}
-	}
+	attachFallbacks(f.Regular)
+	attachFallbacks(f.Bold)
+	attachFallbacks(f.Mono)
+	attachFallbacks(f.Italic)
+	attachFallbacks(f.BoldItalic)
+
 	return f, nil
+}
+
+func (ff *FontAndFace) HasGlyph(r rune) bool {
+	if ff == nil {
+		return false
+	}
+	if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+		return true
+	}
+	if ff.SFNT != nil {
+		var b sfnt.Buffer
+		idx, err := ff.SFNT.GlyphIndex(&b, r)
+		if err == nil && idx != 0 {
+			return true
+		}
+	} else if ff.Face != nil {
+		_, ok := ff.Face.GlyphAdvance(r)
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (ff *FontAndFace) FindFaceForRune(r rune) *FontAndFace {
+	if ff == nil {
+		return nil
+	}
+	if ff.HasGlyph(r) {
+		return ff
+	}
+	for _, fb := range ff.Fallbacks {
+		if fb.HasGlyph(r) {
+			return fb
+		}
+	}
+	return ff
+}
+
+type textRun struct {
+	fnt  *FontAndFace
+	text string
+}
+
+func (ff *FontAndFace) segmentRuns(s string) []textRun {
+	if ff == nil || len(s) == 0 {
+		return nil
+	}
+	if len(ff.Fallbacks) == 0 {
+		return []textRun{{fnt: ff, text: s}}
+	}
+
+	var runs []textRun
+	var currentFnt *FontAndFace
+	var currentRun []rune
+
+	for _, r := range s {
+		targetFnt := ff.FindFaceForRune(r)
+		if currentFnt == nil {
+			currentFnt = targetFnt
+			currentRun = append(currentRun, r)
+		} else if currentFnt == targetFnt {
+			currentRun = append(currentRun, r)
+		} else {
+			runs = append(runs, textRun{fnt: currentFnt, text: string(currentRun)})
+			currentFnt = targetFnt
+			currentRun = []rune{r}
+		}
+	}
+	if len(currentRun) > 0 {
+		runs = append(runs, textRun{fnt: currentFnt, text: string(currentRun)})
+	}
+	return runs
+}
+
+func (ff *FontAndFace) getFace(size float64) font.Face {
+	if ff == nil {
+		return nil
+	}
+	if size <= 0 || math.IsNaN(size) {
+		size = ff.baseSize
+	}
+	if size <= 0 {
+		size = 16
+	}
+	if math.Abs(size-ff.baseSize) < 0.001 && ff.Face != nil {
+		return ff.Face
+	}
+	key := int(math.Round(size * 100))
+
+	ff.mu.RLock()
+	if ff.faces != nil {
+		if f, ok := ff.faces[key]; ok {
+			ff.mu.RUnlock()
+			return f
+		}
+	}
+	ff.mu.RUnlock()
+
+	ff.mu.Lock()
+	defer ff.mu.Unlock()
+	if ff.faces == nil {
+		ff.faces = make(map[int]font.Face)
+	}
+	if f, ok := ff.faces[key]; ok {
+		return f
+	}
+
+	if ff.SFNT != nil {
+		face, err := opentype.NewFace(ff.SFNT, &opentype.FaceOptions{
+			Size:    size,
+			DPI:     96,
+			Hinting: font.HintingFull,
+		})
+		if err == nil {
+			ff.faces[key] = face
+			return face
+		}
+	}
+	return ff.Face
 }
 
 // ---- Layout primitives ----
 
 type canvas struct {
 	img     *image.RGBA
-	dc      *freetype.Context
 	w, h    int
 	maxH    int // Maximum permitted height
 	margin  int
@@ -243,7 +398,6 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 		startH = maxH
 	}
 
-	// Sane initial allocation budget to prevent massive front-loaded allocations (~16MB / 4M pixels)
 	if int64(width)*int64(startH) > 4*1024*1024 {
 		startH = int((4 * 1024 * 1024) / int64(width))
 	}
@@ -258,22 +412,11 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 		startH = int(maxTotalPixels / int64(width))
 	}
 
-	// Start tall; we'll grow later if needed
 	img := image.NewRGBA(image.Rect(0, 0, width, startH))
-	dc := freetype.NewContext()
-	dc.SetDPI(96)
-	dc.SetClip(img.Bounds())
-	dc.SetDst(img)
-	dc.SetSrc(image.NewUniform(th.FG))
-	dc.SetFont(nil)
-	dc.SetFontSize(ptSize)
-
-	// Fill BG
 	draw.Draw(img, img.Bounds(), image.NewUniform(th.BG), image.Point{}, draw.Src)
 
 	return &canvas{
 		img:     img,
-		dc:      dc,
 		w:       width,
 		h:       img.Bounds().Dy(),
 		maxH:    maxH,
@@ -315,20 +458,27 @@ func (c *canvas) ensureHeightAbs(targetY int) {
 
 	c.img = newImg
 	c.h = newH
-
-	c.dc = freetype.NewContext()
-	c.dc.SetDPI(96)
-	c.dc.SetClip(c.img.Bounds())
-	c.dc.SetDst(c.img)
-	c.dc.SetSrc(image.NewUniform(c.th.FG))
-	c.dc.SetFont(nil)
-	c.dc.SetFontSize(c.ptSize)
 }
 
-func (c *canvas) setFace(fnt *FontAndFace, color color.Color, size float64) {
-	c.dc.SetFontSize(size)
-	c.dc.SetSrc(image.NewUniform(color))
-	c.dc.SetFont(fnt.Font)
+func (c *canvas) drawString(fnt *FontAndFace, size float64, col color.Color, s string, x, baseline int) int {
+	if fnt == nil || s == "" {
+		return x
+	}
+	runs := fnt.segmentRuns(s)
+	var d font.Drawer
+	d.Dst = c.img
+	d.Src = image.NewUniform(col)
+	d.Dot = fixed.Point26_6{X: fixed.I(x), Y: fixed.I(baseline)}
+
+	for _, run := range runs {
+		face := run.fnt.getFace(size)
+		if face == nil {
+			continue
+		}
+		d.Face = face
+		d.DrawString(run.text)
+	}
+	return d.Dot.X.Round()
 }
 
 func getNodeText(n ast.Node, md []byte) string {
@@ -356,30 +506,18 @@ func measureWidth(fnt *FontAndFace, size float64, s string) float64 {
 	if fnt == nil || s == "" {
 		return 0
 	}
-	// freetype.Context lacks a direct width measurement; approximate using font.Drawer
-	var d font.Drawer
-	d.Face = fnt.Face
-	// d.Dot fixed point ignores size; face was created at size
-	d.Src = image.NewUniform(color.Black)
-	d.Dst = nil
-	width := float64(d.MeasureString(s).Round())
-	base := fnt.baseSize
-	if base <= 0 {
-		base = size
+	runs := fnt.segmentRuns(s)
+	var total fixed.Int26_6
+	for _, run := range runs {
+		face := run.fnt.getFace(size)
+		if face == nil {
+			continue
+		}
+		var d font.Drawer
+		d.Face = face
+		total += d.MeasureString(run.text)
 	}
-	if base <= 0 {
-		base = 1
-	}
-	if size <= 0 {
-		size = base
-	}
-	if size <= 0 {
-		size = 1
-	}
-	if size != base {
-		width *= size / base
-	}
-	return width
+	return float64(total.Round())
 }
 
 func (c *canvas) addVSpace(px int) {
@@ -615,10 +753,8 @@ func (c *canvas) drawCodeBlock(spans [][]codeSpan, left, right int, size float64
 			if span.Text == "" {
 				continue
 			}
-			c.setFace(mono, span.Color, size)
-			pt := freetype.Pt(int(x), y)
-			_, _ = c.dc.DrawString(span.Text, pt)
-			x += measureWidth(mono, size, span.Text)
+			newX := c.drawString(mono, size, span.Color, span.Text, int(x), y)
+			x = float64(newX)
 		}
 		y += lineHeight
 	}
@@ -1335,14 +1471,12 @@ func (r *renderer) drawListMarker(marker string, baseline int, markerLeft, marke
 		return
 	}
 	r.c.ensureHeightAbs(baseline + int(r.baseSize))
-	r.c.setFace(font, r.c.th.FG, r.baseSize)
 	width := measureWidth(font, r.baseSize, marker)
 	x := markerRight - int(width)
 	if x < markerLeft {
 		x = markerLeft
 	}
-	pt := freetype.Pt(x, baseline)
-	_, _ = r.c.dc.DrawString(marker, pt)
+	_ = r.c.drawString(font, r.baseSize, r.c.th.FG, marker, x, baseline)
 }
 
 type lineMetric struct {
@@ -1409,10 +1543,8 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			if w.font == nil {
 				w.font = c.fonts.Regular
 			}
-			c.setFace(w.font, w.color, w.size)
-			pt := freetype.Pt(x, baseline)
-			_, _ = c.dc.DrawString(w.text, pt)
-			width := int(measureWidth(w.font, w.size, w.text))
+			newX := c.drawString(w.font, w.size, w.color, w.text, x, baseline)
+			width := newX - x
 			if w.underline && width > 0 {
 				underlineY := baseline + int(w.size*0.12)
 				if underlineY <= baseline {
@@ -1421,7 +1553,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 				rect := image.Rect(x, underlineY, x+width, underlineY+1)
 				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
 			}
-			x += width
+			x = newX
 		}
 
 		metrics = append(metrics, lineMetric{baseline: baseline, height: lineHeight})
@@ -2485,6 +2617,12 @@ type RenderOptions struct {
 	BaseFontSize        float64           // Base font size in points. Default is 16, max is 1024.
 	Theme               Theme             // Color theme. Defaults to light theme.
 	Fonts               Fonts             // Font configuration. Defaults to bundled Go fonts.
+	FontRegular         string            // Path to TTF for regular text
+	FontBold            string            // Path to TTF for bold text
+	FontMono            string            // Path to TTF for mono/code
+	FontItalic          string            // Path to TTF for italic text (optional; default Go Italic)
+	FontBoldItalic      string            // Path to TTF for bold italic text (optional; default Go Bold Italic)
+	FontFallbacks       []string          // Paths to fallback TTF/OTF fonts for missing glyphs
 	LinkFootnotes       *bool             // Add footnotes for links. Defaults to true.
 	ImageFootnotes      *bool             // Add footnotes for images. Defaults to false.
 	BaseDir             string            // Base directory for resolving local image paths.
@@ -2616,7 +2754,7 @@ func normalizeRenderOptions(opts *RenderOptions) error {
 	}
 
 	// Fill in missing fonts using the bundled defaults.
-	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
+	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil || opts.Fonts.Italic == nil || opts.Fonts.BoldItalic == nil {
 		fallback, err := LoadFonts(FontConfig{SizeBase: opts.BaseFontSize})
 		if err != nil {
 			return err
@@ -2630,10 +2768,44 @@ func normalizeRenderOptions(opts *RenderOptions) error {
 		if opts.Fonts.Mono == nil {
 			opts.Fonts.Mono = fallback.Mono
 		}
+		if opts.Fonts.Italic == nil {
+			opts.Fonts.Italic = fallback.Italic
+		}
+		if opts.Fonts.BoldItalic == nil {
+			opts.Fonts.BoldItalic = fallback.BoldItalic
+		}
 	}
 
-	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil {
+	if opts.Fonts.Regular == nil || opts.Fonts.Bold == nil || opts.Fonts.Mono == nil || opts.Fonts.Italic == nil || opts.Fonts.BoldItalic == nil {
 		return errors.New("md2png: incomplete font configuration")
+	}
+
+	if len(opts.FontFallbacks) > 0 {
+		var fallbacks []*FontAndFace
+		for _, fbPath := range opts.FontFallbacks {
+			if fbPath == "" {
+				continue
+			}
+			b, err := os.ReadFile(fbPath)
+			if err != nil {
+				return fmt.Errorf("failed to read fallback font %q: %w", fbPath, err)
+			}
+			fb, err := loadFontAndFace(b, opts.BaseFontSize)
+			if err != nil {
+				return fmt.Errorf("failed to load fallback font %q: %w", fbPath, err)
+			}
+			fallbacks = append(fallbacks, fb)
+		}
+		attachFallbacks := func(target *FontAndFace) {
+			if target != nil {
+				target.Fallbacks = append(target.Fallbacks, fallbacks...)
+			}
+		}
+		attachFallbacks(opts.Fonts.Regular)
+		attachFallbacks(opts.Fonts.Bold)
+		attachFallbacks(opts.Fonts.Mono)
+		attachFallbacks(opts.Fonts.Italic)
+		attachFallbacks(opts.Fonts.BoldItalic)
 	}
 
 	if opts.LinkFootnotes == nil {

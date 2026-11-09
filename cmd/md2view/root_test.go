@@ -35,6 +35,12 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "test")
 	args = append(args, "--fontmono")
 	args = append(args, "test")
+	args = append(args, "--fontitalic")
+	args = append(args, "test")
+	args = append(args, "--fontbolditalic")
+	args = append(args, "test")
+	args = append(args, "--font-fallback")
+	args = append(args, "test")
 	args = append(args, "--footnote-links")
 	args = append(args, "--footnote-images")
 	args = append(args, "--max-height")
@@ -91,6 +97,21 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected fontMono to be non-nil")
 	} else if *cmd.fontMono != "test" {
 		t.Errorf("Expected fontMono to be 'test', got '%v'", *cmd.fontMono)
+	}
+	if cmd.fontItalic == nil {
+		t.Errorf("Expected fontItalic to be non-nil")
+	} else if *cmd.fontItalic != "test" {
+		t.Errorf("Expected fontItalic to be 'test', got '%v'", *cmd.fontItalic)
+	}
+	if cmd.fontBoldItalic == nil {
+		t.Errorf("Expected fontBoldItalic to be non-nil")
+	} else if *cmd.fontBoldItalic != "test" {
+		t.Errorf("Expected fontBoldItalic to be 'test', got '%v'", *cmd.fontBoldItalic)
+	}
+	if cmd.fontFallback == nil {
+		t.Errorf("Expected fontFallback to be non-nil")
+	} else if *cmd.fontFallback != "test" {
+		t.Errorf("Expected fontFallback to be 'test', got '%v'", *cmd.fontFallback)
 	}
 	if cmd.footnoteLinks == nil {
 		t.Errorf("Expected footnoteLinks to be non-nil")
