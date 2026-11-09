@@ -101,6 +101,12 @@ func (c *RootCmd) Usage() {
 	}
 }
 
+func (c *RootCmd) usageError(kind cmd.UsageErrorKind, flag string, cause error, format string, args ...any) error {
+	return newUsageError(c.commandPath(), kind, flag, cause, format, args...)
+}
+
+func (c *RootCmd) commandPath() string { return "md2view" }
+
 func (c *RootCmd) UsageRecursive() {
 	err := executeUsage(os.Stderr, "md2view_usage.txt", UsageDataRootCmd{c, true})
 	if err != nil {
@@ -257,6 +263,10 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
 		if err != nil {
+			var exitCode *cmd.ErrExitCode
+			if errors.As(err, &exitCode) {
+				return err
+			}
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
 				return nil
@@ -265,8 +275,8 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 				fmt.Fprintf(os.Stderr, "Use '%s help' for more information.\n", os.Args[0])
 				return nil
 			}
-			if e, ok := err.(*cmd.ErrExitCode); ok {
-				return e
+			if errors.Is(err, cmd.ErrUsage) {
+				return err
 			}
 			return fmt.Errorf("md2view failed: %w", err)
 		}
@@ -347,7 +357,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -359,14 +369,15 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
-				iv, err := strconv.Atoi(value)
+				v, err := strconv.Atoi(value)
 				if err != nil {
-					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
+					return c.usageError(cmd.UsageInvalidValue, name, err, "invalid integer value for flag %s: %s", name, value)
 				}
-				c.width = &iv
+				val := v
+				c.width = &val
 
 			case "margin":
 				if !hasValue {
@@ -374,14 +385,15 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
-				iv, err := strconv.Atoi(value)
+				v, err := strconv.Atoi(value)
 				if err != nil {
-					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
+					return c.usageError(cmd.UsageInvalidValue, name, err, "invalid integer value for flag %s: %s", name, value)
 				}
-				c.margin = &iv
+				val := v
+				c.margin = &val
 
 			case "pt":
 				if !hasValue {
@@ -389,14 +401,15 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
-				f, err := strconv.ParseFloat(value, 64)
+				v, err := strconv.ParseFloat(value, 64)
 				if err != nil {
-					return fmt.Errorf("invalid float64 value for flag %s: %s", name, value)
+					return c.usageError(cmd.UsageInvalidValue, name, err, "invalid float64 value for flag %s: %s", name, value)
 				}
-				c.pt = &f
+				val := v
+				c.pt = &val
 
 			case "theme":
 				if !hasValue {
@@ -404,7 +417,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -416,7 +429,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -428,7 +441,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -440,7 +453,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -452,7 +465,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -464,7 +477,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -476,7 +489,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
 				s := value
@@ -486,7 +499,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				if hasValue {
 					b, err := strconv.ParseBool(value)
 					if err != nil {
-						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+						return c.usageError(cmd.UsageInvalidValue, name, err, "invalid boolean value for flag %s: %s", name, value)
 					}
 					c.footnoteLinks = &b
 				} else {
@@ -498,7 +511,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				if hasValue {
 					b, err := strconv.ParseBool(value)
 					if err != nil {
-						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+						return c.usageError(cmd.UsageInvalidValue, name, err, "invalid boolean value for flag %s: %s", name, value)
 					}
 					c.footnoteImages = &b
 				} else {
@@ -512,20 +525,21 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
-				iv, err := strconv.Atoi(value)
+				v, err := strconv.Atoi(value)
 				if err != nil {
-					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
+					return c.usageError(cmd.UsageInvalidValue, name, err, "invalid integer value for flag %s: %s", name, value)
 				}
-				c.maxHeight = &iv
+				val := v
+				c.maxHeight = &val
 
 			case "tableFitWidth", "table-fit-width":
 				if hasValue {
 					b, err := strconv.ParseBool(value)
 					if err != nil {
-						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+						return c.usageError(cmd.UsageInvalidValue, name, err, "invalid boolean value for flag %s: %s", name, value)
 					}
 					c.tableFitWidth = &b
 				} else {
@@ -537,7 +551,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				if hasValue {
 					b, err := strconv.ParseBool(value)
 					if err != nil {
-						return fmt.Errorf("invalid boolean value for flag %s: %s", name, value)
+						return c.usageError(cmd.UsageInvalidValue, name, err, "invalid boolean value for flag %s: %s", name, value)
 					}
 					c.disableHighlighting = &b
 				} else {
@@ -551,16 +565,17 @@ func (c *RootCmd) Execute(args []string) (err error) {
 						value = args[i+1]
 						i++
 					} else {
-						return fmt.Errorf("flag %s requires a value", name)
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
 					}
 				}
-				iv, err := strconv.Atoi(value)
+				v, err := strconv.Atoi(value)
 				if err != nil {
-					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
+					return c.usageError(cmd.UsageInvalidValue, name, err, "invalid integer value for flag %s: %s", name, value)
 				}
-				c.codeTabWidth = &iv
+				val := v
+				c.codeTabWidth = &val
 			default:
-				return fmt.Errorf("unknown flag: --%s", name)
+				return c.usageError(cmd.UsageUnknownFlag, name, nil, "unknown flag: --%s", name)
 			}
 		} else if strings.HasPrefix(arg, "-") && arg != "-" {
 			// Short flags
@@ -574,12 +589,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				found := false
 
 				if !found {
-					return fmt.Errorf("unknown flag: -%s", char)
+					return c.usageError(cmd.UsageUnknownFlag, char, nil, "unknown flag: -%s", char)
 				}
 			}
 		} else {
 			remainingArgs = append(remainingArgs, args[i:]...)
 			break
+		}
+	}
+
+	if !dashDashSeen && len(remainingArgs) > 0 {
+		if cmd, ok := c.Commands[remainingArgs[0]]; ok {
+			return cmd().Execute(remainingArgs[1:])
 		}
 	}
 	// Handle vararg args
@@ -593,13 +614,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 	}
 	if c.CommandAction != nil {
 		if err := c.CommandAction(c); err != nil {
-			return fmt.Errorf("md2view failed: %w", err)
-		}
-	}
-
-	if !dashDashSeen && len(remainingArgs) > 0 {
-		if cmd, ok := c.Commands[remainingArgs[0]]; ok {
-			return cmd().Execute(remainingArgs[1:])
+			return err
 		}
 	}
 	return nil
