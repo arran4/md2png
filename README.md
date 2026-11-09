@@ -10,7 +10,7 @@
 - Handles headings (H1–H5), paragraphs, ordered and unordered lists, bold text, code blocks, block quotes, tables, and horizontal rules.
 - Dark and light themes, adjustable width, margin, and point size.
 - Optional custom fonts: `--font`, `--fontbold`, `--fontmono`.
-- Output format follows the `--out` extension.
+- Output format follows the `--out` extension (`.png`, `.jpg`, `.gif`, `.svg`).
 
 ---
 
@@ -48,7 +48,7 @@ Requires Go 1.22 or newer.
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--in` | Markdown input file, or stdin when empty | — |
-| `--out` | Output image (`.png`, `.jpg`, `.gif`) | `out.png` |
+| `--out` | Output file (`.png`, `.jpg`, `.gif`, `.svg`) | `out.png` |
 | `--width` | Image width in pixels | 1024 |
 | `--margin` | Margin in pixels | 48 |
 | `--pt` | Base font size (points) | 16 |
@@ -284,7 +284,7 @@ Everything happens in memory; there is no HTML renderer or external process.
 - [x] Tables
 - [x] Inline images
 - [x] Syntax highlighting
-- [ ] SVG output
+- [x] SVG output
 - [ ] Configurable themes via YAML/JSON
 
 ---
