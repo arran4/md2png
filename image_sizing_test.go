@@ -101,20 +101,42 @@ func TestImageSizing_PercentageWidth(t *testing.T) {
 	}
 }
 
-func TestImageSizing_URLParamsSyntax(t *testing.T) {
-	tmpDir := t.TempDir()
-	imgFile := createSizedTestImage(t, tmpDir, "rect.png", 100, 50)
+func TestImageURL_PreservesQueryParams(t *testing.T) {
+	receivedQuery := ""
+	receivedPath := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.URL.RawQuery
+		receivedPath = r.URL.Path
+		img := image.NewRGBA(image.Rect(0, 0, 100, 50))
+		w.Header().Set("Content-Type", "image/png")
+		_ = png.Encode(w, img)
+	}))
+	defer srv.Close()
 
-	md := `![rectangle](` + imgFile + `#width=70&align=right)
+	// Remote URL with query parameters and fragment, styled with attribute syntax
+	remoteURL := srv.URL + "/test-image.png?token=secret123&version=2&size=large#section-1"
+	md := `![remote](` + remoteURL + `){width=80 align=right}
 `
 	img, err := Render([]byte(md), RenderOptions{
 		Width: 600,
+		ImagePolicy: &ImagePolicy{
+			AllowRemote: true,
+			AllowLocal:  true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 	if img == nil {
 		t.Fatalf("expected rendered image")
+	}
+
+	expectedQuery := "token=secret123&version=2&size=large"
+	if receivedQuery != expectedQuery {
+		t.Errorf("expected remote query %q, got %q", expectedQuery, receivedQuery)
+	}
+	if receivedPath != "/test-image.png" {
+		t.Errorf("expected remote path /test-image.png, got %q", receivedPath)
 	}
 }
 

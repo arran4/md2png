@@ -742,40 +742,6 @@ func computeImageDimensions(origW, origH int, reqW, reqH int, hasW, hasH bool, a
 	return targetW, targetH
 }
 
-func parseImageURLParams(dest string) (string, map[string]string) {
-	params := make(map[string]string)
-	clean := dest
-
-	if idx := strings.Index(clean, "#"); idx != -1 {
-		frag := clean[idx+1:]
-		clean = clean[:idx]
-		parseKeyValueParams(frag, params)
-	}
-
-	if idx := strings.Index(clean, "?"); idx != -1 {
-		query := clean[idx+1:]
-		clean = clean[:idx]
-		parseKeyValueParams(query, params)
-	}
-
-	return clean, params
-}
-
-func parseKeyValueParams(s string, out map[string]string) {
-	parts := strings.Split(s, "&")
-	for _, p := range parts {
-		kv := strings.SplitN(p, "=", 2)
-		k := strings.ToLower(strings.TrimSpace(kv[0]))
-		v := ""
-		if len(kv) == 2 {
-			v = strings.TrimSpace(kv[1])
-		}
-		if k != "" {
-			out[k] = v
-		}
-	}
-}
-
 type imageAttributeTransformer struct{}
 
 var imageKVRegex = regexp.MustCompile(`([a-zA-Z0-9_.-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s}]+)))?`)
@@ -959,15 +925,12 @@ type textToken struct {
 	center    bool
 }
 
-func (r *renderer) resolveImageDimensionsAndAlignment(imgNode *ast.Image, img image.Image, urlParams map[string]string) (int, int, string) {
+func (r *renderer) resolveImageDimensionsAndAlignment(imgNode *ast.Image, img image.Image) (int, int, string) {
 	bounds := img.Bounds()
 	origW := bounds.Dx()
 	origH := bounds.Dy()
 
 	attrs := make(map[string]string)
-	for k, v := range urlParams {
-		attrs[k] = v
-	}
 	if imgNode != nil {
 		for _, attr := range imgNode.Attributes() {
 			attrs[strings.ToLower(string(attr.Name))] = fmt.Sprint(attr.Value)
@@ -1508,13 +1471,12 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			}
 		case *ast.Image:
 			rawDest := strings.TrimSpace(string(c.Destination))
-			cleanDest, urlParams := parseImageURLParams(rawDest)
 			alt := strings.TrimSpace(getNodeText(c, md))
 			if alt == "" {
 				alt = strings.TrimSpace(string(c.Title))
 			}
-			if img, err := r.loadImage(cleanDest); err == nil {
-				targetW, targetH, imgAlign := r.resolveImageDimensionsAndAlignment(c, img, urlParams)
+			if img, err := r.loadImage(rawDest); err == nil {
+				targetW, targetH, imgAlign := r.resolveImageDimensionsAndAlignment(c, img)
 				scaledImg := scaleImage(img, targetW, targetH)
 				*out = append(*out, textToken{
 					image:    scaledImg,
