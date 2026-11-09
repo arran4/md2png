@@ -28,6 +28,7 @@ func Md2view(
 	margin *int, // flag: --margin Margin in pixels (0 for default)
 	pt *float64, // flag: --pt Base font size in points (paragraph) (0 for default)
 	theme *string, // flag: --theme Theme: light|dark (default: "light")
+	themeFile *string, // flag: --theme-file Path to CSS-lite theme file
 	fontRegular *string, // flag: --font Path to TTF for regular text (optional; default Go Regular)
 	fontBold *string, // flag: --fontbold Path to TTF for bold text (optional; default Go Bold)
 	fontMono *string, // flag: --fontmono Path to TTF for mono/code (optional; default Go Mono)
@@ -78,7 +79,7 @@ func Md2view(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(nil, width, margin, pt, theme, themeFile, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, baseDir)
 	if err != nil {
 		return err
 	}

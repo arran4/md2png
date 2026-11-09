@@ -79,6 +79,7 @@ type RootCmd struct {
 	margin              *int
 	pt                  *float64
 	theme               *string
+	themeFile           *string
 	fontRegular         *string
 	fontBold            *string
 	fontMono            *string
@@ -164,6 +165,15 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.Func("theme", "flag: Theme: light|dark", func(s string) error {
 		c.theme = &s
+		return nil
+	})
+
+	c.Func("theme-file", "flag: Path to CSS theme file", func(s string) error {
+		c.themeFile = &s
+		return nil
+	})
+	c.Func("lite", "flag: Path to CSS theme file", func(s string) error {
+		c.themeFile = &s
 		return nil
 	})
 
@@ -259,7 +269,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth)
+		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.themeFile, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -425,6 +435,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				s := value
 				c.theme = &s
+
+			case "themeFile", "theme-file", "lite":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.themeFile = &s
 
 			case "fontRegular", "font":
 				if !hasValue {
