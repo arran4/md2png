@@ -59,15 +59,6 @@ func mustWriteFile(t *testing.T, path string, data []byte, perm os.FileMode) {
 	}
 }
 
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %s: %v", path, err)
-	}
-	return data
-}
-
 func mustOpen(t *testing.T, path string) *os.File {
 	t.Helper()
 	f, err := os.Open(path)

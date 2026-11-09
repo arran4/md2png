@@ -114,7 +114,7 @@ func RunMd2png(
 
 	if len(res.Diagnostics) > 0 {
 		for _, diag := range res.Diagnostics {
-			fmt.Fprintf(stderr, "md2png: %s\n", diag.String())
+			_, _ = fmt.Fprintf(stderr, "md2png: %s\n", diag.String())
 		}
 	}
 
