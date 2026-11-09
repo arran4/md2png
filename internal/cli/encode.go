@@ -26,6 +26,11 @@ func hasTransparency(img image.Image) bool {
 	return false
 }
 
+// imageToPalettedWithTransparency converts an image with alpha transparency into a
+// 256-color paletted image suitable for GIF encoding.
+// GIF supports binary transparency (index 0 is fully transparent).
+// For pixels with partial alpha (alpha >= 128 threshold), colors are unpremultiplied
+// using color.NRGBAModel and promoted to fully opaque (A=255) rather than darkened.
 func imageToPalettedWithTransparency(img image.Image) *image.Paletted {
 	bounds := img.Bounds()
 	paletteMap := make(map[color.RGBA]uint8)
@@ -38,15 +43,14 @@ func imageToPalettedWithTransparency(img image.Image) *image.Paletted {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := img.At(x, y)
-			_, _, _, a := c.RGBA()
-			if a < 128*257 {
+			nrgba := color.NRGBAModel.Convert(c).(color.NRGBA)
+			if nrgba.A < 128 {
 				continue
 			}
-			r, g, b, _ := c.RGBA()
-			rgba := color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 255}
-			if _, ok := paletteMap[rgba]; !ok && len(pal) < 256 {
-				paletteMap[rgba] = uint8(len(pal))
-				pal = append(pal, rgba)
+			opaqueRGBA := color.RGBA{R: nrgba.R, G: nrgba.G, B: nrgba.B, A: 255}
+			if _, ok := paletteMap[opaqueRGBA]; !ok && len(pal) < 256 {
+				paletteMap[opaqueRGBA] = uint8(len(pal))
+				pal = append(pal, opaqueRGBA)
 			}
 		}
 	}
@@ -55,16 +59,15 @@ func imageToPalettedWithTransparency(img image.Image) *image.Paletted {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := img.At(x, y)
-			_, _, _, a := c.RGBA()
-			if a < 128*257 {
+			nrgba := color.NRGBAModel.Convert(c).(color.NRGBA)
+			if nrgba.A < 128 {
 				paletted.SetColorIndex(x, y, 0)
 			} else {
-				r, g, b, _ := c.RGBA()
-				rgba := color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 255}
-				if idx, ok := paletteMap[rgba]; ok {
+				opaqueRGBA := color.RGBA{R: nrgba.R, G: nrgba.G, B: nrgba.B, A: 255}
+				if idx, ok := paletteMap[opaqueRGBA]; ok {
 					paletted.SetColorIndex(x, y, idx)
 				} else {
-					paletted.SetColorIndex(x, y, uint8(pal.Index(rgba)))
+					paletted.SetColorIndex(x, y, uint8(pal.Index(opaqueRGBA)))
 				}
 			}
 		}
