@@ -203,6 +203,41 @@ func TestBuiltInLinkContrast(t *testing.T) {
 	}
 }
 
+func TestParseTheme_VersionDirective(t *testing.T) {
+	// Valid version 1 directive
+	v1Input := `@version 1;
+@theme v1test extends light;
+document { color: #111; }
+`
+	th, err := ParseTheme(v1Input)
+	if err != nil {
+		t.Fatalf("expected valid @version 1 to succeed, got %v", err)
+	}
+	r, _, _, _ := th.FG.RGBA()
+	if uint8(r>>8) != 0x11 {
+		t.Errorf("expected parsed color #111, got %x", r>>8)
+	}
+
+	// Unsupported version directive
+	v2Input := `@version 2;
+@theme v2test extends light;
+`
+	_, err = ParseTheme(v2Input)
+	if err == nil {
+		t.Fatalf("expected error for @version 2, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported theme format version") {
+		t.Errorf("expected unsupported version error, got %v", err)
+	}
+
+	// Malformed version directive without semicolon
+	malformed := `@version 1`
+	_, err = ParseTheme(malformed)
+	if err == nil {
+		t.Fatalf("expected error for unclosed @version, got nil")
+	}
+}
+
 func relativeLuminance(r, g, b float64) float64 {
 	toLinear := func(c float64) float64 {
 		if c <= 0.03928 {

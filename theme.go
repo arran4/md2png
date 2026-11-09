@@ -147,6 +147,10 @@ func (p *themeParser) parse() (Theme, error) {
 					}
 					baseTheme = parent
 				}
+			} else if directive.name == "version" {
+				if directive.version != "1" {
+					return Theme{}, p.errorf("unsupported theme format version %q (only version 1 is supported)", directive.version)
+				}
 			} else {
 				return Theme{}, p.errorf("unknown directive @%s", directive.name)
 			}
@@ -185,6 +189,7 @@ type directiveInfo struct {
 	name      string
 	themeName string
 	extends   string
+	version   string
 }
 
 func (p *themeParser) parseDirective() (directiveInfo, error) {
@@ -195,6 +200,23 @@ func (p *themeParser) parseDirective() (directiveInfo, error) {
 	}
 
 	info := directiveInfo{name: name}
+	if name == "version" {
+		if err := p.skipWhitespaceAndComments(); err != nil {
+			return directiveInfo{}, err
+		}
+		ver, err := p.parseIdentifier()
+		if err != nil {
+			return directiveInfo{}, err
+		}
+		info.version = ver
+		if err := p.skipWhitespaceAndComments(); err != nil {
+			return directiveInfo{}, err
+		}
+		if p.next() != ';' {
+			return directiveInfo{}, p.errorf("expected ';' after @version directive")
+		}
+		return info, nil
+	}
 	if name == "theme" {
 		if err := p.skipWhitespaceAndComments(); err != nil {
 			return directiveInfo{}, err
