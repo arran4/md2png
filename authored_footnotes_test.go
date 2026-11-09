@@ -181,3 +181,56 @@ Body referencing note A[^a] and note B[^b].
 		}
 	}
 }
+
+func TestAuthoredFootnotes_FootnoteOrder_Coexistence(t *testing.T) {
+	md := `Document with [first link](https://first.example.com), authored note[^1], and [second link](https://second.example.com).
+
+[^1]: Authored note body.
+`
+	yes := true
+	// Test AuthoredFirst (default)
+	optsAuthoredFirst := RenderOptions{
+		Width:         800,
+		LinkFootnotes: &yes,
+		FootnoteOrder: FootnoteOrderAuthoredFirst,
+	}
+	img1, err := Render([]byte(md), optsAuthoredFirst)
+	if err != nil {
+		t.Fatalf("render AuthoredFirst failed: %v", err)
+	}
+
+	// Test LinksFirst
+	optsLinksFirst := RenderOptions{
+		Width:         800,
+		LinkFootnotes: &yes,
+		FootnoteOrder: FootnoteOrderLinksFirst,
+	}
+	img2, err := Render([]byte(md), optsLinksFirst)
+	if err != nil {
+		t.Fatalf("render LinksFirst failed: %v", err)
+	}
+
+	if img1 == nil || img2 == nil {
+		t.Fatal("expected non-nil images")
+	}
+
+	// Both images should render with full heights
+	if img1.Bounds().Dy() < 100 || img2.Bounds().Dy() < 100 {
+		t.Fatalf("expected substantial height for footnote render, got %d and %d",
+			img1.Bounds().Dy(), img2.Bounds().Dy())
+	}
+}
+
+func TestAuthoredFootnotes_InvalidFootnoteOrder(t *testing.T) {
+	opts := RenderOptions{
+		Width:         600,
+		FootnoteOrder: FootnoteOrder(999),
+	}
+	_, err := Render([]byte("# Test"), opts)
+	if err == nil {
+		t.Fatal("expected error for invalid FootnoteOrder, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid FootnoteOrder") {
+		t.Fatalf("expected invalid FootnoteOrder error, got: %v", err)
+	}
+}

@@ -93,6 +93,7 @@ type RootCmd struct {
 	tableFitWidth       *bool
 	disableHighlighting *bool
 	codeTabWidth        *int
+	footnoteOrder       *string
 	CommandAction       func(c *RootCmd) error
 }
 
@@ -275,9 +276,18 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.Func("footnote-order", "flag: Footnote ordering: authored|links", func(s string) error {
+		c.footnoteOrder = &s
+		return nil
+	})
+	c.Func("first", "flag: Footnote ordering: authored|links", func(s string) error {
+		c.footnoteOrder = &s
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth)
+		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.footnoteOrder)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -617,6 +627,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 					return fmt.Errorf("invalid integer value for flag %s: %s", name, value)
 				}
 				c.codeTabWidth = &iv
+
+			case "footnoteOrder", "footnote-order", "first":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.footnoteOrder = &s
 			default:
 				return fmt.Errorf("unknown flag: --%s", name)
 			}

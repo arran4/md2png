@@ -8,9 +8,10 @@ import (
 
 func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
+func ptrString(s string) *string    { return &s }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 		t.Fatalf("expected image, got nil")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -48,7 +49,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 
 func TestCLIDisableHighlighting(t *testing.T) {
 	// Default absent behavior
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping true
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -66,7 +67,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping false
-	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, "")
+	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
 	if err3 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
 	}
@@ -76,7 +77,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 }
 
 func TestCLITableFitWidthEquivalence(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestCLITableFitWidthEquivalence(t *testing.T) {
 		t.Errorf("expected TableFitWidth to be true")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -108,7 +109,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
 	if errCLI != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", errCLI)
 	}
@@ -137,7 +138,7 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, "")
+			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, nil, "")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -145,5 +146,36 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 				t.Errorf("expected CodeTabWidth %d, got %d", tt.expected, opts.CodeTabWidth)
 			}
 		})
+	}
+}
+
+func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.FootnoteOrder != md2png.FootnoteOrderAuthoredFirst {
+		t.Errorf("expected default AuthoredFirst, got %v", opts.FootnoteOrder)
+	}
+
+	opts2, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("authored-first"), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts2.FootnoteOrder != md2png.FootnoteOrderAuthoredFirst {
+		t.Errorf("expected AuthoredFirst, got %v", opts2.FootnoteOrder)
+	}
+
+	opts3, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("links-first"), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts3.FootnoteOrder != md2png.FootnoteOrderLinksFirst {
+		t.Errorf("expected LinksFirst, got %v", opts3.FootnoteOrder)
+	}
+
+	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("invalid-order"), "")
+	if err == nil {
+		t.Fatalf("expected error for invalid footnote order, got nil")
 	}
 }

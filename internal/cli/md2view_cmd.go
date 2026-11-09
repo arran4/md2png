@@ -40,6 +40,7 @@ func Md2view(
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
 	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
 	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
+	footnoteOrder *string, // flag: --footnote-order Footnote ordering: authored-first|links-first (default: "authored-first")
 	args ...string, // arg: [args]
 ) error {
 	var err error
@@ -85,6 +86,7 @@ func Md2view(
 		nil, width, margin, pt, theme,
 		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
 		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
+		footnoteOrder,
 		baseDir,
 	)
 	if err != nil {
