@@ -138,7 +138,8 @@ func (p *themeParser) parse() (Theme, error) {
 			if err != nil {
 				return Theme{}, err
 			}
-			if directive.name == "theme" {
+			switch directive.name {
+			case "theme":
 				themeName = directive.themeName
 				if directive.extends != "" {
 					parent, err := ThemeByName(directive.extends)
@@ -147,11 +148,11 @@ func (p *themeParser) parse() (Theme, error) {
 					}
 					baseTheme = parent
 				}
-			} else if directive.name == "version" {
+			case "version":
 				if directive.version != "1" {
 					return Theme{}, p.errorf("unsupported theme format version %q (only version 1 is supported)", directive.version)
 				}
-			} else {
+			default:
 				return Theme{}, p.errorf("unknown directive @%s", directive.name)
 			}
 			continue
