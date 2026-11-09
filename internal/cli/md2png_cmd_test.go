@@ -141,8 +141,9 @@ func TestMd2png_Integration(t *testing.T) {
 }
 
 func captureStdout(t *testing.T, fn func() error) ([]byte, error) {
-	out, _, err := captureStdoutStderr(t, fn)
-	return out, err
+	t.Helper()
+	outBytes, _, err := captureStdoutStderr(t, fn)
+	return outBytes, err
 }
 
 func TestMd2png_StdoutFormats(t *testing.T) {

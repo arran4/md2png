@@ -139,9 +139,8 @@ func RunBatch(
 		return nil
 	}
 
-	// Prepare base render options once so theme and fonts are reused
-	baseOpts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, "")
-	if err != nil {
+	// Validate render options once upfront before starting workers
+	if _, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, ""); err != nil {
 		return fmt.Errorf("md2png batch: option error: %w", err)
 	}
 
@@ -173,6 +172,14 @@ func RunBatch(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			workerOpts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, "")
+			if err != nil {
+				errMu.Lock()
+				taskErrors = append(taskErrors, fmt.Sprintf("options: %v", err))
+				abort = true
+				errMu.Unlock()
+				return
+			}
 			for task := range taskCh {
 				errMu.Lock()
 				if abort && !shouldContinue {
@@ -181,7 +188,7 @@ func RunBatch(
 				}
 				errMu.Unlock()
 
-				taskErr := renderBatchTask(task, baseOpts, resolvedFormat, stderr)
+				taskErr := renderBatchTask(task, workerOpts, resolvedFormat, stderr)
 				if taskErr != nil {
 					errMu.Lock()
 					taskErrors = append(taskErrors, fmt.Sprintf("%s: %v", task.InputPath, taskErr))
