@@ -821,14 +821,17 @@ const (
 )
 
 type textToken struct {
-	text      string
-	font      *FontAndFace
-	size      float64
-	color     color.Color
-	underline bool
-	newline   bool
-	image     image.Image
-	center    bool
+	text           string
+	font           *FontAndFace
+	size           float64
+	color          color.Color
+	underline      bool
+	strikethrough  bool
+	isTaskCheckBox bool
+	isChecked      bool
+	newline        bool
+	image          image.Image
+	center         bool
 }
 
 func (r *renderer) ensureFootnote(raw string) int {
@@ -1252,13 +1255,66 @@ func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image,
 	return url, loader, nil
 }
 
+type inlineStyle struct {
+	font          *FontAndFace
+	size          float64
+	color         color.Color
+	isBold        bool
+	isItalic      bool
+	strikethrough bool
+	underline     bool
+}
+
+func (r *renderer) resolveStyledFont(st inlineStyle) *FontAndFace {
+	if st.font == r.c.fonts.Mono {
+		return st.font
+	}
+	isBold := st.isBold || (st.font != nil && st.font == r.c.fonts.Bold)
+	isItalic := st.isItalic || (st.font != nil && st.font == r.c.fonts.Italic)
+
+	if isBold && isItalic {
+		if r.c.fonts.BoldItalic != nil {
+			return r.c.fonts.BoldItalic
+		}
+		if r.c.fonts.Bold != nil {
+			return r.c.fonts.Bold
+		}
+		if r.c.fonts.Italic != nil {
+			return r.c.fonts.Italic
+		}
+	} else if isBold {
+		if r.c.fonts.Bold != nil {
+			return r.c.fonts.Bold
+		}
+	} else if isItalic {
+		if r.c.fonts.Italic != nil {
+			return r.c.fonts.Italic
+		}
+	}
+	if st.font != nil {
+		return st.font
+	}
+	return r.c.fonts.Regular
+}
+
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
+	st := inlineStyle{
+		font:  font,
+		size:  size,
+		color: color,
+	}
+	r.collectInlineTokensStyled(node, md, st, out)
+}
+
+func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inlineStyle, out *[]textToken) {
 	if r.renderErr != nil {
 		return
 	}
-	if font == nil {
-		font = r.c.fonts.Regular
+	if st.font == nil {
+		st.font = r.c.fonts.Regular
 	}
+
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
 			if _, ok := child.(*ast.RawHTML); !ok {
@@ -1271,10 +1327,18 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			// separate opening and closing RawHTML nodes.
 			text := string(c.Segment.Value(md))
 			if text != "" {
+				effFont := r.resolveStyledFont(st)
 				parts := strings.Split(text, "\n")
 				for i, part := range parts {
 					if part != "" {
-						*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+						*out = append(*out, textToken{
+							text:          part,
+							font:          effFont,
+							size:          st.size,
+							color:         st.color,
+							underline:     st.underline,
+							strikethrough: st.strikethrough,
+						})
 					}
 					if i < len(parts)-1 {
 						*out = append(*out, textToken{newline: true})
@@ -1284,16 +1348,33 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if c.SoftLineBreak() || c.HardLineBreak() {
 				*out = append(*out, textToken{newline: true})
 			}
+		case *ast.String:
+			text := string(c.Value)
+			if text != "" {
+				effFont := r.resolveStyledFont(st)
+				*out = append(*out, textToken{
+					text:          text,
+					font:          effFont,
+					size:          st.size,
+					color:         st.color,
+					underline:     st.underline,
+					strikethrough: st.strikethrough,
+				})
+			}
 		case *ast.Link:
+			dest := string(c.Destination)
+			linkStyle := st
+			linkStyle.color = linkColor
+			linkStyle.underline = true
 			before := len(*out)
-			r.collectInlineTokens(c, md, font, size, linkColor, out)
+			r.collectInlineTokensStyled(c, md, linkStyle, out)
 			for i := before; i < len(*out); i++ {
 				(*out)[i].color = linkColor
 				(*out)[i].underline = true
 			}
 			if r.linkFootnotes {
-				idx := r.ensureFootnote(string(c.Destination))
-				r.appendFootnoteMarker(out, size, idx)
+				idx := r.ensureFootnote(dest)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.AutoLink:
 			label := string(c.Label(md))
@@ -1301,11 +1382,19 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				label = string(c.URL(md))
 			}
 			if label != "" {
-				*out = append(*out, textToken{text: label, font: font, size: size, color: linkColor, underline: true})
+				effFont := r.resolveStyledFont(st)
+				*out = append(*out, textToken{
+					text:          label,
+					font:          effFont,
+					size:          st.size,
+					color:         linkColor,
+					underline:     true,
+					strikethrough: st.strikethrough,
+				})
 			}
 			if r.linkFootnotes {
 				idx := r.ensureFootnote(string(c.URL(md)))
-				r.appendFootnoteMarker(out, size, idx)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Image:
 			dest := strings.TrimSpace(string(c.Destination))
@@ -1348,32 +1437,61 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 					fallbackColor = warningColor
 				}
 				if fallback != "" {
-					*out = append(*out, textToken{text: fallback, font: font, size: size, color: fallbackColor})
+					*out = append(*out, textToken{
+						text:          fallback,
+						font:          r.resolveStyledFont(st),
+						size:          st.size,
+						color:         fallbackColor,
+						strikethrough: st.strikethrough,
+					})
 				}
 			}
 			if r.imageFootnotes {
 				idx := r.ensureFootnote(dest)
-				r.appendFootnoteMarker(out, size, idx)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Paragraph:
-			r.collectInlineTokens(c, md, font, size, color, out)
+			r.collectInlineTokensStyled(c, md, st, out)
 			if child.NextSibling() != nil {
 				*out = append(*out, textToken{newline: true})
 			}
 		case *ast.Emphasis:
-			nextFont := font
-			if c.Level >= 2 && r.c.fonts.Bold != nil {
-				nextFont = r.c.fonts.Bold
+			nextStyle := st
+			if c.Level == 1 {
+				nextStyle.isItalic = true
+			} else if c.Level == 2 {
+				nextStyle.isBold = true
+			} else if c.Level >= 3 {
+				nextStyle.isBold = true
+				nextStyle.isItalic = true
 			}
-			r.collectInlineTokens(c, md, nextFont, size, color, out)
+			r.collectInlineTokensStyled(c, md, nextStyle, out)
+		case *extensionAST.Strikethrough:
+			nextStyle := st
+			nextStyle.strikethrough = true
+			r.collectInlineTokensStyled(c, md, nextStyle, out)
+		case *extensionAST.TaskCheckBox:
+			*out = append(*out, textToken{
+				isTaskCheckBox: true,
+				isChecked:      c.IsChecked,
+				size:           st.size,
+				color:          st.color,
+			})
 		case *ast.CodeSpan:
 			mono := r.c.fonts.Mono
 			if mono == nil {
-				mono = font
+				mono = st.font
 			}
 			txt := getNodeText(c, md)
 			if txt != "" {
-				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
+				*out = append(*out, textToken{
+					text:          txt,
+					font:          mono,
+					size:          st.size * 0.95,
+					color:         st.color,
+					strikethrough: st.strikethrough,
+					underline:     st.underline,
+				})
 			}
 		case *ast.RawHTML:
 			offset := 0
@@ -1408,23 +1526,32 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				if part == "\n" {
 					*out = append(*out, textToken{newline: true})
 				} else if part != "" {
-					*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+					*out = append(*out, textToken{
+						text:          part,
+						font:          r.resolveStyledFont(st),
+						size:          st.size,
+						color:         st.color,
+						strikethrough: st.strikethrough,
+					})
 				}
 			}
 		default:
 			if child.HasChildren() {
-				r.collectInlineTokens(child, md, font, size, color, out)
+				r.collectInlineTokensStyled(child, md, st, out)
 			}
 		}
 	}
 }
 
 type styledWord struct {
-	text      string
-	font      *FontAndFace
-	size      float64
-	color     color.Color
-	underline bool
+	text           string
+	font           *FontAndFace
+	size           float64
+	color          color.Color
+	underline      bool
+	strikethrough  bool
+	isTaskCheckBox bool
+	isChecked      bool
 }
 
 func splitTextPreserveSpaces(s string) []string {
@@ -1485,6 +1612,72 @@ type lineMetric struct {
 	height   int
 }
 
+func (c *canvas) drawTaskCheckBox(x, y, size int, checked bool, fg color.Color) {
+	if size < 8 {
+		size = 8
+	}
+	c.ensureHeightAbs(y + size)
+	b := c.img.Bounds()
+
+	setPix := func(px, py int, col color.Color) {
+		if px >= b.Min.X && px < b.Max.X && py >= b.Min.Y && py < b.Max.Y {
+			c.img.Set(px, py, col)
+		}
+	}
+
+	for i := 0; i < size; i++ {
+		setPix(x+i, y, fg)
+		setPix(x+i, y+size-1, fg)
+		setPix(x, y+i, fg)
+		setPix(x+size-1, y+i, fg)
+	}
+
+	if checked {
+		drawLine := func(x0, y0, x1, y1 int) {
+			dx := x1 - x0
+			if dx < 0 {
+				dx = -dx
+			}
+			dy := y1 - y0
+			if dy < 0 {
+				dy = -dy
+			}
+			sx, sy := 1, 1
+			if x0 >= x1 {
+				sx = -1
+			}
+			if y0 >= y1 {
+				sy = -1
+			}
+			err := dx - dy
+			for {
+				setPix(x0, y0, fg)
+				if x0 == x1 && y0 == y1 {
+					break
+				}
+				e2 := 2 * err
+				if e2 > -dy {
+					err -= dy
+					x0 += sx
+				}
+				if e2 < dx {
+					err += dx
+					y0 += sy
+				}
+			}
+		}
+
+		kx0, ky0 := x+3, y+size/2
+		kx1, ky1 := x+size*2/5, y+size-3
+		kx2, ky2 := x+size-3, y+3
+
+		drawLine(kx0, ky0, kx1, ky1)
+		drawLine(kx0, ky0-1, kx1, ky1-1)
+		drawLine(kx1, ky1, kx2, ky2)
+		drawLine(kx1, ky1-1, kx2, ky2-1)
+	}
+}
+
 func (c *canvas) drawTokens(tokens []textToken, left, right int, align extensionAST.Alignment) []lineMetric {
 	if len(tokens) == 0 {
 		return nil
@@ -1525,7 +1718,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		lineWidthForAlign := 0
 		trailingSpaces := 0
 		for i := len(line) - 1; i >= 0; i-- {
-			if strings.TrimSpace(line[i].text) == "" {
+			if !line[i].isTaskCheckBox && strings.TrimSpace(line[i].text) == "" {
 				trailingSpaces++
 			} else {
 				break
@@ -1533,6 +1726,12 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		}
 		line = line[:len(line)-trailingSpaces]
 		for _, w := range line {
+			if w.isTaskCheckBox {
+				boxSize := int(math.Round(w.size * 0.75))
+				gap := int(math.Round(w.size * 0.35))
+				lineWidthForAlign += boxSize + gap
+				continue
+			}
 			lineWidthForAlign += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
 		}
 		if align == extensionAST.AlignCenter && lineWidthForAlign < (right-left) {
@@ -1541,6 +1740,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			x = right - lineWidthForAlign
 		}
 		for _, w := range line {
+			if w.isTaskCheckBox {
+				boxSize := int(math.Round(w.size * 0.75))
+				gap := int(math.Round(w.size * 0.35))
+				boxTop := baseline - int(w.size*0.72)
+				c.drawTaskCheckBox(x, boxTop, boxSize, w.isChecked, w.color)
+				x += boxSize + gap
+				continue
+			}
 			if w.font == nil {
 				w.font = c.fonts.Regular
 			}
@@ -1552,6 +1759,12 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					underlineY = baseline + 1
 				}
 				rect := image.Rect(x, underlineY, x+width, underlineY+1)
+				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
+			}
+			if w.strikethrough && width > 0 {
+				strikeY := baseline - int(w.size*0.28)
+				thickness := int(math.Max(1, math.Round(w.size*0.06)))
+				rect := image.Rect(x, strikeY, x+width, strikeY+thickness)
 				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
 			}
 			x = newX
@@ -1603,6 +1816,25 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			c.cursorY += int(c.ptSize * 0.6)
 			continue
 		}
+		if tok.isTaskCheckBox {
+			boxSize := int(math.Round(tok.size * 0.75))
+			gap := int(math.Round(tok.size * 0.35))
+			totalW := float64(boxSize + gap)
+			if lineWidth+totalW > maxWidth && len(line) > 0 {
+				flush(false)
+			}
+			line = append(line, styledWord{
+				isTaskCheckBox: true,
+				isChecked:      tok.isChecked,
+				size:           tok.size,
+				color:          tok.color,
+			})
+			if tok.size > lineMaxSize {
+				lineMaxSize = tok.size
+			}
+			lineWidth += totalW
+			continue
+		}
 		font := tok.font
 		if font == nil {
 			font = c.fonts.Regular
@@ -1618,7 +1850,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 				if len(line) == 0 {
 					continue
 				}
-				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+				line = append(line, styledWord{
+					text:          seg,
+					font:          font,
+					size:          tok.size,
+					color:         tok.color,
+					underline:     tok.underline,
+					strikethrough: tok.strikethrough,
+				})
 				lineWidth += segWidth
 				continue
 			}
@@ -1634,7 +1873,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 						charStr := string(r)
 						charWidth := math.Ceil(measureWidth(font, tok.size, charStr))
 						if currentWidth+charWidth > maxWidth && len(currentWord) > 0 {
-							line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+							line = append(line, styledWord{
+								text:          currentWord,
+								font:          font,
+								size:          tok.size,
+								color:         tok.color,
+								underline:     tok.underline,
+								strikethrough: tok.strikethrough,
+							})
 							if tok.size > lineMaxSize {
 								lineMaxSize = tok.size
 							}
@@ -1647,7 +1893,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 						}
 					}
 					if currentWord != "" {
-						line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+						line = append(line, styledWord{
+							text:          currentWord,
+							font:          font,
+							size:          tok.size,
+							color:         tok.color,
+							underline:     tok.underline,
+							strikethrough: tok.strikethrough,
+						})
 						if tok.size > lineMaxSize {
 							lineMaxSize = tok.size
 						}
@@ -1656,7 +1909,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					continue
 				}
 			}
-			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+			line = append(line, styledWord{
+				text:          seg,
+				font:          font,
+				size:          tok.size,
+				color:         tok.color,
+				underline:     tok.underline,
+				strikethrough: tok.strikethrough,
+			})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
@@ -1694,6 +1954,19 @@ func (r *renderer) renderList(list *ast.List, md []byte, level int) {
 }
 
 func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker string, markerLeft, markerRight, contentLeft int) {
+	hasTaskBox := false
+	if first := li.FirstChild(); first != nil {
+		for c := first.FirstChild(); c != nil; c = c.NextSibling() {
+			if _, ok := c.(*extensionAST.TaskCheckBox); ok {
+				hasTaskBox = true
+				break
+			}
+		}
+	}
+	if hasTaskBox && marker == "•" {
+		marker = ""
+	}
+
 	startY := r.c.cursorY
 	markerDrawn := false
 	blockSpacing := int(r.baseSize * 0.5)
