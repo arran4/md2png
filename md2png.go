@@ -1022,6 +1022,7 @@ type renderer struct {
 	imageFootnotes bool
 	footnoteIndex  map[string]int
 	footnotes      []string
+	authoredCount  int
 	baseDir        string
 	imageCache     map[string]image.Image
 	cacheKeys      []string
@@ -1140,7 +1141,7 @@ func (r *renderer) ensureFootnote(raw string) int {
 	if idx, ok := r.footnoteIndex[raw]; ok {
 		return idx
 	}
-	idx := len(r.footnotes) + 1
+	idx := r.authoredCount + len(r.footnotes) + 1
 	r.footnoteIndex[raw] = idx
 	r.footnotes = append(r.footnotes, raw)
 	return idx
@@ -1680,6 +1681,10 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if txt != "" {
 				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
 			}
+		case *extensionAST.FootnoteLink:
+			r.appendFootnoteMarker(out, size, c.Index)
+		case *extensionAST.FootnoteBacklink:
+			// Backlinks are omitted in static raster output.
 		case *ast.RawHTML:
 			offset := 0
 			if c.Segments.Len() > 0 {
@@ -2604,9 +2609,127 @@ func (r *renderer) drawFootnotes() {
 		noteSize = r.baseSize
 	}
 	for i, note := range r.footnotes {
-		label := fmt.Sprintf("[%d] %s", i+1, note)
+		label := fmt.Sprintf("[%d] %s", r.authoredCount+i+1, note)
 		tokens := []textToken{{text: label, font: r.c.fonts.Regular, size: noteSize, color: r.c.th.FG}}
 		_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+	}
+}
+
+func (r *renderer) renderFootnoteList(list *extensionAST.FootnoteList, md []byte) {
+	if list == nil || list.Count == 0 {
+		return
+	}
+	r.c.addVSpace(int(r.baseSize * 0.8))
+	r.c.drawHRule()
+	r.c.addVSpace(int(r.baseSize * 0.4))
+	noteSize := r.baseSize * 0.85
+	if noteSize <= 0 {
+		noteSize = r.baseSize
+	}
+
+	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
+		if r.renderErr != nil {
+			return
+		}
+		fn, ok := child.(*extensionAST.Footnote)
+		if !ok {
+			continue
+		}
+		r.renderFootnoteItem(fn, md, noteSize)
+	}
+}
+
+func (r *renderer) renderFootnoteItem(fn *extensionAST.Footnote, md []byte, noteSize float64) {
+	prefix := fmt.Sprintf("[%d] ", fn.Index)
+	isFirstBlock := true
+	indent := int(r.baseSize * 1.5)
+
+	for child := fn.FirstChild(); child != nil; child = child.NextSibling() {
+		if r.renderErr != nil {
+			return
+		}
+		switch c := child.(type) {
+		case *extensionAST.FootnoteBacklink:
+			continue
+		case *ast.Paragraph, *ast.TextBlock:
+			var tokens []textToken
+			if isFirstBlock {
+				tokens = append(tokens, textToken{
+					text:  prefix,
+					font:  r.c.fonts.Regular,
+					size:  noteSize,
+					color: r.c.th.FG,
+				})
+				isFirstBlock = false
+				r.collectInlineTokens(c, md, r.c.fonts.Regular, noteSize, r.c.th.FG, &tokens)
+				if len(tokens) > 0 {
+					_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+					r.c.addVSpace(int(noteSize * 0.4))
+				}
+			} else {
+				r.collectInlineTokens(c, md, r.c.fonts.Regular, noteSize, r.c.th.FG, &tokens)
+				if len(tokens) > 0 {
+					_ = r.c.drawTokens(tokens, r.c.margin+indent, r.c.w-r.c.margin, extensionAST.AlignLeft)
+					r.c.addVSpace(int(noteSize * 0.4))
+				}
+			}
+		case *ast.List:
+			if isFirstBlock {
+				tokens := []textToken{{
+					text:  prefix,
+					font:  r.c.fonts.Regular,
+					size:  noteSize,
+					color: r.c.th.FG,
+				}}
+				_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+				isFirstBlock = false
+			}
+			r.renderList(c, md, 1)
+		case *ast.CodeBlock:
+			text := strings.TrimRight(getNodeText(c, md), "\n")
+			spans := r.tokenizeCodeBlock(text, "", r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, r.c.margin+indent, r.c.w-r.c.margin, noteSize*0.95)
+			r.c.addVSpace(int(noteSize * 0.4))
+		case *ast.FencedCodeBlock:
+			text := strings.TrimRight(getNodeText(c, md), "\n")
+			lang := string(c.Language(md))
+			spans := r.tokenizeCodeBlock(text, lang, r.c.th, r.opts.DisableHighlighting)
+			r.c.drawCodeBlock(spans, r.c.margin+indent, r.c.w-r.c.margin, noteSize*0.95)
+			r.c.addVSpace(int(noteSize * 0.4))
+		default:
+			var tokens []textToken
+			if isFirstBlock {
+				tokens = append(tokens, textToken{
+					text:  prefix,
+					font:  r.c.fonts.Regular,
+					size:  noteSize,
+					color: r.c.th.FG,
+				})
+				isFirstBlock = false
+				r.collectInlineTokens(c, md, r.c.fonts.Regular, noteSize, r.c.th.FG, &tokens)
+				if len(tokens) > 0 {
+					_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+					r.c.addVSpace(int(noteSize * 0.4))
+				}
+			} else {
+				r.collectInlineTokens(c, md, r.c.fonts.Regular, noteSize, r.c.th.FG, &tokens)
+				if len(tokens) > 0 {
+					_ = r.c.drawTokens(tokens, r.c.margin+indent, r.c.w-r.c.margin, extensionAST.AlignLeft)
+					r.c.addVSpace(int(noteSize * 0.4))
+				}
+			}
+		}
+	}
+
+	if isFirstBlock {
+		tokens := []textToken{{
+			text:  prefix,
+			font:  r.c.fonts.Regular,
+			size:  noteSize,
+			color: r.c.th.FG,
+		}}
+		_ = r.c.drawTokens(tokens, r.c.margin, r.c.w-r.c.margin, extensionAST.AlignLeft)
+		r.c.addVSpace(int(noteSize * 0.4))
 	}
 }
 
@@ -2837,11 +2960,14 @@ func (r *renderer) renderDocument(md []byte, doc ast.Node) error {
 			}
 
 			return ast.WalkSkipChildren, nil
+		case *extensionAST.FootnoteList:
+			r.renderFootnoteList(nd, md)
+			return ast.WalkSkipChildren, nil
 		default:
 			switch nd.(type) {
 			case *ast.Document, *ast.ListItem:
 				return ast.WalkContinue, nil
-			case *extensionAST.TableHeader, *extensionAST.TableRow, *extensionAST.TableCell:
+			case *extensionAST.TableHeader, *extensionAST.TableRow, *extensionAST.TableCell, *extensionAST.FootnoteList, *extensionAST.Footnote:
 				return ast.WalkContinue, nil
 			}
 			r.renderUnsupported(nd)
@@ -3199,7 +3325,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	r.ensureImageResolvers()
 
 	mdParser := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithExtensions(extension.GFM, extension.Footnote),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
 			parser.WithASTTransformers(
@@ -3208,6 +3334,12 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 		),
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(data))
+
+	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
+		if fnList, ok := child.(*extensionAST.FootnoteList); ok {
+			r.authoredCount += fnList.Count
+		}
+	}
 
 	if opts.TableFitWidth {
 		r.imageMemo = make(map[string]*memoizedImage)
