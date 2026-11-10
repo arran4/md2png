@@ -4,30 +4,30 @@ Usage: md2png [flags...]
 md2png that renders Markdown to an image
 
 Subcommands:
-    help         Print this help message
-    usage        Print this usage message
+    {{formatHelpRow 5 "help" "Print this help message"}}
+    {{formatHelpRow 5 "usage" "Print this usage message"}}
 
 
 Flags:
-    --in *string                   (default: stdin)     flag: Input Markdown file ( if empty)
-    --out *string                  (default: out.png)   flag: Output image file (.png, .jpg, or .gif)
-    --width *int                   (default: out.png)   flag: Output image width in pixels (0 for default)
-    --margin *int                                       flag: Margin in pixels (0 for default)
-    --pt *float64                                       flag: Base font size in points (paragraph) (0 for default)
-    --theme *string                (default: light)     flag: Theme: light|dark
-    --theme-file, --lite *string   (default: light)     flag: Path to CSS theme file
-    --transparent *bool                                 flag: Explicit transparent page background
-    --font *string                                      flag: Path to TTF for regular text (optional; default Go Regular)
-    --fontbold *string                                  flag: Path to TTF for bold text (optional; default Go Bold)
-    --fontmono *string                                  flag: Path to TTF for mono/code (optional; default Go Mono)
-    --fontitalic *string                                flag: Path to TTF for italic text (optional; default Go Italic)
-    --fontbolditalic *string                            flag: Path to TTF for bold italic text (optional; default Go Bold Italic)
-    --font-fallback *string                             flag: Comma separated paths to fallback TTF/OTF fonts
-    --footnote-links *bool         (default: true)      flag: Add footnotes for link destinations
-    --footnote-images *bool        (default: false)     flag: Add footnotes for image destinations
-    --max-height *int              (default: false)     flag: Maximum output height in pixels (0 for default)
-    --format *string                                    flag: Output format: png, jpeg, or gif
-    --strict *bool                                      flag: Enable strict rendering (fail on warnings)
-    --table-fit-width *bool                             flag: Expand canvas width to fit tables
-    --disable-highlighting *bool                        flag: Disable syntax highlighting
-    --code-tab-width *int          (default: 4)         flag: Tab width in code blocks
+    {{formatFlagRow 30 20 "--in *string" "(default: stdin)" "flag: Input Markdown file ( if empty)"}}
+    {{formatFlagRow 30 20 "--out *string" "(default: out.png)" "flag: Output image file (.png, .jpg, or .gif)"}}
+    {{formatFlagRow 30 20 "--width *int" "(default: out.png)" "flag: Output image width in pixels (0 for default)"}}
+    {{formatFlagRow 30 20 "--margin *int" "" "flag: Margin in pixels (0 for default)"}}
+    {{formatFlagRow 30 20 "--pt *float64" "" "flag: Base font size in points (paragraph) (0 for default)"}}
+    {{formatFlagRow 30 20 "--theme *string" "(default: light)" "flag: Theme: light|dark"}}
+    {{formatFlagRow 30 20 "--theme-file *string" "" "flag: Path to CSS theme file"}}
+    {{formatFlagRow 30 20 "--transparent *bool" "" "flag: Explicit transparent page background"}}
+    {{formatFlagRow 30 20 "--font *string" "(default: light)" "flag: Path to TTF for regular text (optional; default Go Regular)"}}
+    {{formatFlagRow 30 20 "--fontbold *string" "" "flag: Path to TTF for bold text (optional; default Go Bold)"}}
+    {{formatFlagRow 30 20 "--fontmono *string" "" "flag: Path to TTF for mono/code (optional; default Go Mono)"}}
+    {{formatFlagRow 30 20 "--fontitalic *string" "" "flag: Path to TTF for italic text (optional; default Go Italic)"}}
+    {{formatFlagRow 30 20 "--fontbolditalic *string" "" "flag: Path to TTF for bold italic text (optional; default Go Bold Italic)"}}
+    {{formatFlagRow 30 20 "--font-fallback *string" "" "flag: Comma separated paths to fallback TTF/OTF fonts"}}
+    {{formatFlagRow 30 20 "--footnote-links *bool" "(default: true)" "flag: Add footnotes for link destinations"}}
+    {{formatFlagRow 30 20 "--footnote-images *bool" "(default: false)" "flag: Add footnotes for image destinations"}}
+    {{formatFlagRow 30 20 "--max-height *int" "(default: false)" "flag: Maximum output height in pixels (0 for default)"}}
+    {{formatFlagRow 30 20 "--format *string" "" "flag: Output format: png, jpeg, or gif"}}
+    {{formatFlagRow 30 20 "--strict *bool" "" "flag: Enable strict rendering (fail on warnings)"}}
+    {{formatFlagRow 30 20 "--table-fit-width *bool" "" "flag: Expand canvas width to fit tables"}}
+    {{formatFlagRow 30 20 "--disable-highlighting *bool" "" "flag: Disable syntax highlighting"}}
+    {{formatFlagRow 30 20 "--code-tab-width *int" "(default: 4)" "flag: Tab width in code blocks"}}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"unicode/utf8"
 )
 
 // CLITemplatesFS contains all CLI usage templates.
@@ -28,29 +29,80 @@ func getTerminalWidth() int {
 	return 80 // fallback
 }
 
+func displayWidth(s string) int {
+	width := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			i += 2
+			for i < len(s) && ((s[i] >= '0' && s[i] <= '9') || s[i] == ';') {
+				i++
+			}
+			if i < len(s) {
+				i++
+			}
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		width++
+	}
+	return width
+}
+
+func padRight(s string, width int) string {
+	w := displayWidth(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+const (
+	leadingIndent            = 4
+	minDescriptionWidth      = 16
+	compactDescriptionIndent = 8
+)
+
+func compactIndentForWidth(width int) int {
+	if width <= compactDescriptionIndent {
+		if width <= leadingIndent {
+			return 0
+		}
+		return width / 4
+	}
+	return compactDescriptionIndent
+}
+
 func wrapText(text string, indent int, width int) string {
-	if width <= indent {
-		width = indent + 10 // minimum sensible width
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
 	}
 	avail := width - indent
+	if avail < 1 {
+		avail = 1
+	}
 	indentStr := "\n" + strings.Repeat(" ", indent)
 
 	var out strings.Builder
 	lines := strings.Split(text, "\n")
 
 	for i, line := range lines {
+		words := strings.Fields(line)
+		if len(words) == 0 {
+			if i > 0 {
+				out.WriteString("\n")
+			}
+			continue
+		}
 		if i > 0 {
 			out.WriteString(indentStr)
 		}
 
-		words := strings.Fields(line)
-		if len(words) == 0 {
-			continue
-		}
-
 		currentLen := 0
 		for j, word := range words {
-			if j > 0 && currentLen+1+len(word) > avail {
+			wordLen := displayWidth(word)
+			if j > 0 && currentLen+1+wordLen > avail {
 				out.WriteString(indentStr)
 				currentLen = 0
 			} else if j > 0 {
@@ -58,32 +110,102 @@ func wrapText(text string, indent int, width int) string {
 				currentLen++
 			}
 			out.WriteString(word)
-			currentLen += len(word)
+			currentLen += wordLen
 		}
 	}
 	return out.String()
 }
 
+func formatCompactPrefix(compactParts []string, width int) string {
+	joined := strings.Join(compactParts, " ")
+	if leadingIndent+displayWidth(joined) <= width {
+		return joined
+	}
+	cIndent := compactIndentForWidth(width)
+	cIndentStr := "\n" + strings.Repeat(" ", cIndent)
+	var out strings.Builder
+	for i, part := range compactParts {
+		lineIndent := leadingIndent
+		if i > 0 {
+			out.WriteString(cIndentStr)
+			lineIndent = cIndent
+		}
+		if lineIndent+displayWidth(part) > width {
+			out.WriteString(wrapText(part, cIndent, width))
+		} else {
+			out.WriteString(part)
+		}
+	}
+	return out.String()
+}
+
+func formatUsageRow(alignedPrefix string, compactParts []string, descStr string, width int) string {
+	descStr = strings.TrimSpace(descStr)
+	if descStr == "" {
+		trimmedAligned := strings.TrimRight(alignedPrefix, " ")
+		if leadingIndent+displayWidth(trimmedAligned) <= width {
+			return trimmedAligned
+		}
+		return formatCompactPrefix(compactParts, width)
+	}
+
+	indent := leadingIndent + displayWidth(alignedPrefix)
+	if width-indent >= minDescriptionWidth {
+		return alignedPrefix + wrapText(descStr, indent, width)
+	}
+
+	cIndent := compactIndentForWidth(width)
+	prefixLine := formatCompactPrefix(compactParts, width)
+	return prefixLine + "\n" + strings.Repeat(" ", cIndent) + wrapText(descStr, cIndent, width)
+}
+
+func formatHelpRow(labelWidth int, label, descStr string, width int) string {
+	alignedPrefix := padRight(label, labelWidth) + " "
+	return formatUsageRow(alignedPrefix, []string{label}, descStr, width)
+}
+
+func formatFlagRow(maxFlag, maxDef int, flagStr, defStr, descStr string, width int) string {
+	var alignedPrefix string
+	if maxDef > 0 {
+		alignedPrefix = padRight(flagStr, maxFlag) + " " + padRight(defStr, maxDef) + " "
+	} else if defStr != "" {
+		alignedPrefix = padRight(flagStr, maxFlag) + " " + defStr + " "
+	} else {
+		alignedPrefix = padRight(flagStr, maxFlag) + " "
+	}
+	compactParts := []string{flagStr}
+	if defStr != "" {
+		compactParts = []string{flagStr, defStr}
+	}
+	return formatUsageRow(alignedPrefix, compactParts, descStr, width)
+}
+
 func wrapFlag(maxFlag, maxDef, width int, flagStr, defStr, descStr string) string {
-	indent := 4 + maxFlag + 1 + maxDef + 1 // 4 spaces for initial indent + columns + spacing
-	wrappedDesc := wrapText(descStr, indent, width)
-	return wrappedDesc
+	if strings.TrimSpace(descStr) == "" {
+		return ""
+	}
+	indent := leadingIndent + maxFlag + 1
+	if maxDef > 0 {
+		indent += maxDef + 1
+	}
+	if width-indent < minDescriptionWidth {
+		cIndent := compactIndentForWidth(width)
+		return "\n" + strings.Repeat(" ", cIndent) + wrapText(descStr, cIndent, width)
+	}
+	return wrapText(descStr, indent, width)
 }
 
 func GetTemplates() *template.Template {
 	templatesOnce.Do(func() {
-		width := getTerminalWidth()
-
 		funcs := template.FuncMap{
+			"formatHelpRow": func(labelWidth int, label, descStr string) string {
+				return formatHelpRow(labelWidth, label, descStr, getTerminalWidth())
+			},
+			"formatFlagRow": func(maxFlag, maxDef int, flagStr, defStr, descStr string) string {
+				return formatFlagRow(maxFlag, maxDef, flagStr, defStr, descStr, getTerminalWidth())
+			},
 			"wrapFlag": func(maxFlag, maxDef int, flagStr, defStr, descStr string) string {
-				indent := 4 + maxFlag + 1
-				if maxDef > 0 {
-					indent += maxDef + 1
-				}
-				if descStr == "" {
-					return ""
-				}
-				return wrapText(descStr, indent, width)
+				return wrapFlag(maxFlag, maxDef, getTerminalWidth(), flagStr, defStr, descStr)
 			},
 		}
 

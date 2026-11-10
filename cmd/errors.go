@@ -10,7 +10,48 @@ var ErrPrintHelp = errors.New("print help")
 // ErrHelp tells the user to use help.
 var ErrHelp = errors.New("help requested")
 
-// ErrExitCode Mostly used as a pass through, it's caught, but if the sub error is nil and it's not wrapped in another error, it counts as no error.
+// ErrUsage identifies parser and command-usage failures independently of text.
+var ErrUsage = errors.New("invalid command usage")
+
+type UsageErrorKind string
+
+const (
+	UsageNoCommand           UsageErrorKind = "no-command"
+	UsageUnknownCommand      UsageErrorKind = "unknown-command"
+	UsageUnknownFlag         UsageErrorKind = "unknown-flag"
+	UsageMissingFlagValue    UsageErrorKind = "missing-flag-value"
+	UsageInvalidValue        UsageErrorKind = "invalid-value"
+	UsageInvalidArguments    UsageErrorKind = "invalid-arguments"
+	UsageMissingRequiredFlag UsageErrorKind = "missing-required-flag"
+)
+
+// UsageError is one parser failure. CommandPath is the canonical command path;
+// Flag is the supplied flag name without leading dashes, when applicable.
+// Message is presentation text, never a source of classification.
+type UsageError struct {
+	CommandPath string
+	Flag        string
+	Kind        UsageErrorKind
+	Err         error
+	Message     string
+}
+
+func (e *UsageError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return ErrUsage.Error()
+}
+
+func (e *UsageError) Is(target error) bool { return target == ErrUsage }
+
+func (e *UsageError) Unwrap() error { return e.Err }
+
+// ErrExitCode overrides the process status even through ordinary wrapping.
+// A nil inner error suppresses diagnostics; a nonnil cause is rendered separately.
 type ErrExitCode struct {
 	Err  error
 	Code int
