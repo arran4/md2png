@@ -37,8 +37,8 @@ func (p *SVGPainter) PaintSVG(dl *DisplayList) ([]byte, error) {
 
 	// Styles for clean SVG font rendering
 	buf.WriteString("  <style>\n")
-	buf.WriteString("    text { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif; }\n")
-	buf.WriteString("    .mono { font-family: \"SFMono-Regular\", Consolas, \"Liberation Mono\", Menlo, Courier, monospace; }\n")
+	buf.WriteString("    text { font-family: Go, \"Go Regular\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif; }\n")
+	buf.WriteString("    .mono { font-family: \"Go Mono\", \"SFMono-Regular\", Consolas, \"Liberation Mono\", Menlo, Courier, monospace; }\n")
 	buf.WriteString("  </style>\n")
 
 	// Background

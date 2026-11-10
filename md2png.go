@@ -1979,7 +1979,8 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		} else if align == extensionAST.AlignRight && lineWidthForAlign < (right-left) {
 			x = right - lineWidthForAlign
 		}
-		for _, w := range line {
+		for i := 0; i < len(line); i++ {
+			w := line[i]
 			if w.isTaskCheckBox {
 				boxSize := int(math.Round(w.size * 0.75))
 				gap := int(math.Round(w.size * 0.35))
@@ -1991,7 +1992,25 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			if w.font == nil {
 				w.font = c.fonts.Regular
 			}
-			newX := c.drawString(w.font, w.size, w.color, w.text, x, baseline)
+
+			// Coalesce contiguous words on this line with identical styling.
+			combinedText := w.text
+			for i+1 < len(line) {
+				next := line[i+1]
+				if !next.isTaskCheckBox &&
+					next.font == w.font &&
+					next.size == w.size &&
+					next.color == w.color &&
+					next.underline == w.underline &&
+					next.strikethrough == w.strikethrough {
+					combinedText += next.text
+					i++
+				} else {
+					break
+				}
+			}
+
+			newX := c.drawString(w.font, w.size, w.color, combinedText, x, baseline)
 			width := newX - x
 			if w.underline && width > 0 {
 				underlineY := baseline + int(w.size*0.12)
