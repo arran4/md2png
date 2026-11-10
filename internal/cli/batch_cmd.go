@@ -330,7 +330,9 @@ func renderBatchTask(task BatchTask, baseOpts md2png.RenderOptions, format strin
 	res, err := md2png.RenderWithDiagnostics(data, opts)
 	if len(res.Diagnostics) > 0 && stderr != nil {
 		for _, diag := range res.Diagnostics {
-			fmt.Fprintf(stderr, "md2png [%s]: %s\n", task.InputPath, diag.String())
+			if _, err := fmt.Fprintf(stderr, "md2png [%s]: %s\n", task.InputPath, diag.String()); err != nil {
+				return fmt.Errorf("md2png batch: write diagnostics: %w", err)
+			}
 		}
 	}
 	if err != nil {
