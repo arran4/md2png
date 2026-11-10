@@ -18,6 +18,9 @@ Flags:
     --font *string                 (default: light)     flag: Path to TTF for regular text (optional; default Go Regular)
     --fontbold *string                                  flag: Path to TTF for bold text (optional; default Go Bold)
     --fontmono *string                                  flag: Path to TTF for mono/code (optional; default Go Mono)
+    --fontitalic *string                                flag: Path to TTF for italic text (optional; default Go Italic)
+    --fontbolditalic *string                            flag: Path to TTF for bold italic text (optional; default Go Bold Italic)
+    --font-fallback *string                             flag: Comma separated paths to fallback TTF/OTF fonts
     --footnote-links *bool         (default: true)      flag: Add footnotes for link destinations
     --footnote-images *bool        (default: false)     flag: Add footnotes for image destinations
     --max-height *int              (default: false)     flag: Maximum output height in pixels (0 for default)

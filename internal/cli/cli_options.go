@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/arran4/md2png"
 )
 
@@ -15,6 +17,9 @@ func ConvertCommandArgsToRenderOptions(
 	fontRegular *string,
 	fontBold *string,
 	fontMono *string,
+	fontItalic *string,
+	fontBoldItalic *string,
+	fontFallback *string,
 	footnoteLinks *bool,
 	footnoteImages *bool,
 	maxHeight *int,
@@ -41,6 +46,19 @@ func ConvertCommandArgsToRenderOptions(
 	}
 	if fontMono != nil {
 		cfg.MonoPath = *fontMono
+	}
+	if fontItalic != nil {
+		cfg.ItalicPath = *fontItalic
+	}
+	if fontBoldItalic != nil {
+		cfg.BoldItalicPath = *fontBoldItalic
+	}
+	if fontFallback != nil && *fontFallback != "" {
+		for _, p := range strings.Split(*fontFallback, ",") {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				cfg.FallbackPaths = append(cfg.FallbackPaths, trimmed)
+			}
+		}
 	}
 	if pt != nil {
 		cfg.SizeBase = *pt
