@@ -29,6 +29,7 @@ Subcommands:
     {{formatFlagRow 30 20 "--code-tab-width *int" "(default: 4)" "Tab width in code blocks"}}
     {{formatFlagRow 30 20 "--in *string" "(default: stdin)" "flag: Input Markdown file ( if empty)"}}
     {{formatFlagRow 30 20 "--out *string" "(default: out.png)" "flag: Output image file (.png, .jpg, or .gif)"}}
+    {{formatFlagRow 30 20 "--footnote-order *string" "(default: 4)" "flag: Ordering of authored vs link footnotes"}}
 
 `batch` Flags:
     {{formatFlagRow 30 20 "--out-dir, -o *string" "(default: dist)" "Output directory for rendered images"}}
