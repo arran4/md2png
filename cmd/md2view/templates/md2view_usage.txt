@@ -26,8 +26,7 @@ Flags:
     {{formatFlagRow 30 18 "--table-fit-width *bool" "" "flag: Expand canvas width to fit tables"}}
     {{formatFlagRow 30 18 "--disable-highlighting *bool" "" "flag: Disable syntax highlighting"}}
     {{formatFlagRow 30 18 "--code-tab-width *int" "(default: 4)" "flag: Tab width in code blocks"}}
-
-    {{formatFlagRow 30 18 "--footnote-order *string" "" "flag: Ordering of authored vs link footnotes"}}
+    {{formatFlagRow 30 18 "--footnote-order *string" "(default: 4)" "flag: Ordering of authored vs link footnotes"}}
 
 Positional Arguments:
     {{formatHelpRow 9 "[args...]" "arg: [args]"}}
