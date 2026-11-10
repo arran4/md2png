@@ -55,13 +55,54 @@ func TestResolveFormat(t *testing.T) {
 	}
 }
 
+func mustWriteFile(t *testing.T, path string, data []byte, perm os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, data, perm); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+}
+
+func mustOpen(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("failed to open %s: %v", path, err)
+	}
+	return f
+}
+
+func mustDecodePNG(t *testing.T, r io.Reader) image.Image {
+	t.Helper()
+	img, err := png.Decode(r)
+	if err != nil {
+		t.Fatalf("failed to decode PNG: %v", err)
+	}
+	return img
+}
+
+func mustDecodeJPEG(t *testing.T, r io.Reader) image.Image {
+	t.Helper()
+	img, err := jpeg.Decode(r)
+	if err != nil {
+		t.Fatalf("failed to decode JPEG: %v", err)
+	}
+	return img
+}
+
+func mustDecodeGIF(t *testing.T, r io.Reader) *gif.GIF {
+	t.Helper()
+	g, err := gif.DecodeAll(r)
+	if err != nil {
+		t.Fatalf("failed to decode GIF: %v", err)
+	}
+	return g
+}
+
 func TestMd2png_Integration(t *testing.T) {
 	tempDir := t.TempDir()
 
 	inPath := filepath.Join(tempDir, "in.md")
-	if err := os.WriteFile(inPath, []byte("# Hello World"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWriteFile(t, inPath, []byte("# Hello World"), 0o644)
 
 	tests := []struct {
 		name       string
@@ -75,14 +116,9 @@ func TestMd2png_Integration(t *testing.T) {
 			outName: "out.png",
 			wantErr: false,
 			check: func(t *testing.T, outPath string) {
-				f, err := os.Open(outPath)
-				if err != nil {
-					t.Fatal(err)
-				}
+				f := mustOpen(t, outPath)
 				defer func() { _ = f.Close() }()
-				if _, err := png.Decode(f); err != nil {
-					t.Errorf("failed to decode as PNG: %v", err)
-				}
+				_ = mustDecodePNG(t, f)
 			},
 		},
 		{
@@ -90,14 +126,9 @@ func TestMd2png_Integration(t *testing.T) {
 			outName: "out.jpg",
 			wantErr: false,
 			check: func(t *testing.T, outPath string) {
-				f, err := os.Open(outPath)
-				if err != nil {
-					t.Fatal(err)
-				}
+				f := mustOpen(t, outPath)
 				defer func() { _ = f.Close() }()
-				if _, err := jpeg.Decode(f); err != nil {
-					t.Errorf("failed to decode as JPEG: %v", err)
-				}
+				_ = mustDecodeJPEG(t, f)
 			},
 		},
 		{
@@ -105,17 +136,11 @@ func TestMd2png_Integration(t *testing.T) {
 			outName: "out.gif",
 			wantErr: false,
 			check: func(t *testing.T, outPath string) {
-				f, err := os.Open(outPath)
-				if err != nil {
-					t.Fatal(err)
-				}
+				f := mustOpen(t, outPath)
 				defer func() { _ = f.Close() }()
 
 				// Issue #64 requires explicit test to verify GIF output is single-frame
-				g, err := gif.DecodeAll(f)
-				if err != nil {
-					t.Fatalf("failed to decode gif: %v", err)
-				}
+				g := mustDecodeGIF(t, f)
 				if len(g.Image) != 1 {
 					t.Errorf("expected exactly 1 frame in GIF, got %d", len(g.Image))
 				}
@@ -158,8 +183,9 @@ func TestMd2png_Integration(t *testing.T) {
 }
 
 func captureStdout(t *testing.T, fn func() error) ([]byte, error) {
-	out, _, err := captureStdoutStderr(t, fn)
-	return out, err
+	t.Helper()
+	outBytes, _, err := captureStdoutStderr(t, fn)
+	return outBytes, err
 }
 
 func TestMd2png_StdoutFormats(t *testing.T) {
@@ -310,6 +336,22 @@ func TestEncodeToFilePermissions(t *testing.T) {
 	})
 }
 
+func TestRunMd2png_InjectedStreams(t *testing.T) {
+	stdin := strings.NewReader("# Injected Stdin test\n")
+	var stdout, stderr bytes.Buffer
+	outArg := "-"
+	err := RunMd2png(stdin, &stdout, &stderr, nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("RunMd2png() error = %v", err)
+	}
+	if !bytes.HasPrefix(stdout.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatal("expected PNG signature in stdout")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
 func TestMd2png_StdinToStdout(t *testing.T) {
 	oldStdin := os.Stdin
 	rStdin, wStdin, err := os.Pipe()
@@ -344,9 +386,7 @@ func TestMd2png_StdinToStdout(t *testing.T) {
 func TestMd2pngStrict(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.png")
 	inPath := filepath.Join(t.TempDir(), "in.md")
-	if err := os.WriteFile(inPath, []byte("![missing](missing.png)"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	mustWriteFile(t, inPath, []byte("![missing](missing.png)"), 0o644)
 
 	err := Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(true), nil, nil, nil)
 	if err == nil {
@@ -356,12 +396,11 @@ func TestMd2pngStrict(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 }
+
 func TestMd2pngCLIStdoutStderr(t *testing.T) {
 	tempDir := t.TempDir()
 	inPath := filepath.Join(tempDir, "in.md")
-	if err := os.WriteFile(inPath, []byte("Hello <br>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWriteFile(t, inPath, []byte("Hello <br>"), 0o644)
 
 	outPath := "-"
 	outBytes, errBytes, err := captureStdoutStderr(t, func() error {
@@ -460,34 +499,21 @@ func TestMd2pngTableFitWidthCommand(t *testing.T) {
 | 1  | 2  | 3  | 4  | 5  | 6  | 7  | 8  | 9  | 10  |
 `)
 
-	err := os.WriteFile(inPath, md, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustWriteFile(t, inPath, md, 0o644)
 
 	format := "png"
 	width := 200
 	margin := 10
 	tableFit := true
 
-	err = Md2png(&inPath, &outPath, &width, &margin, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, &tableFit, nil, nil)
+	err := Md2png(&inPath, &outPath, &width, &margin, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, &tableFit, nil, nil)
 	if err != nil {
 		t.Fatalf("Md2png command failed: %v", err)
 	}
 
-	cmdFile, err := os.Open(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := cmdFile.Close(); err != nil {
-			t.Errorf("Failed to close cmdFile: %v", err)
-		}
-	}()
-	cmdImg, _, err := image.Decode(cmdFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cmdFile := mustOpen(t, outPath)
+	defer func() { _ = cmdFile.Close() }()
+	cmdImg := mustDecodePNG(t, cmdFile)
 	cmdWidth := cmdImg.Bounds().Dx()
 
 	opts := md2png.RenderOptions{Width: 200, Margin: 10, TableFitWidth: true}
