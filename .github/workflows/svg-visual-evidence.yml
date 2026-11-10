@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   render-svg-examples:
@@ -36,17 +36,6 @@ jobs:
         run: |
           find testdata/visual/generated -maxdepth 1 -type f -print -exec wc -c {} \;
           sha256sum testdata/visual/generated/*.svg testdata/visual/generated/*.png
-      - name: Persist generated samples on the same-repo evidence branch
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'test/svg-visual-evidence' && github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f testdata/visual/generated/showcase.svg testdata/visual/generated/showcase.png
-          git add -f testdata/visual/generated/narrow.svg testdata/visual/generated/narrow.png
-          if ! git diff --cached --quiet; then
-            git commit -m "test(svg): publish actual renderer visual previews"
-            git push origin HEAD:refs/heads/test/svg-visual-evidence
-          fi
       - name: Upload inspectable SVG and PNG examples
         uses: actions/upload-artifact@v7
         with:
