@@ -15,9 +15,9 @@ Flags:
     {{formatFlagRow 30 20 "--margin *int" "" "flag: Margin in pixels (0 for default)"}}
     {{formatFlagRow 30 20 "--pt *float64" "" "flag: Base font size in points (paragraph) (0 for default)"}}
     {{formatFlagRow 30 20 "--theme *string" "(default: light)" "flag: Theme: light|dark"}}
-    {{formatFlagRow 30 20 "--theme-file *string" "" "flag: Path to CSS theme file"}}
+    {{formatFlagRow 30 20 "--theme-file *string" "(default: light)" "flag: Path to CSS theme file"}}
     {{formatFlagRow 30 20 "--transparent *bool" "" "flag: Explicit transparent page background"}}
-    {{formatFlagRow 30 20 "--font *string" "(default: light)" "flag: Path to TTF for regular text (optional; default Go Regular)"}}
+    {{formatFlagRow 30 20 "--font *string" "" "flag: Path to TTF for regular text (optional; default Go Regular)"}}
     {{formatFlagRow 30 20 "--fontbold *string" "" "flag: Path to TTF for bold text (optional; default Go Bold)"}}
     {{formatFlagRow 30 20 "--fontmono *string" "" "flag: Path to TTF for mono/code (optional; default Go Mono)"}}
     {{formatFlagRow 30 20 "--fontitalic *string" "" "flag: Path to TTF for italic text (optional; default Go Italic)"}}
