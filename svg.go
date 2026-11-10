@@ -9,6 +9,10 @@ import (
 	"image/png"
 )
 
+// The raster font faces use 96 DPI. SVG font-size is in CSS pixels, not
+// typographic points, so convert sizes to the same pixel scale as the layout.
+const svgFontDPI = 96.0
+
 // SVGPainter renders a DisplayList into valid SVG XML vector output.
 // Note on SVG limitations: Text runs are emitted as standard scalable <text> elements
 // styled with system font families. Because different SVG renderers and client environments
@@ -79,7 +83,7 @@ func (p *SVGPainter) PaintSVG(dl *DisplayList) ([]byte, error) {
 					}
 
 					fmt.Fprintf(&buf, `  <text x="%d" y="%d" font-size="%.2f" fill="%s"%s xml:space="preserve">%s</text>`+"\n",
-						item.Point.X, item.Point.Y, item.FontSize, fill, extraAttrs, textBuf.String())
+						item.Point.X, item.Point.Y, item.FontSize*svgFontDPI/72, fill, extraAttrs, textBuf.String())
 				}
 			}
 		case ItemImage:

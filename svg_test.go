@@ -2,6 +2,7 @@ package md2png
 
 import (
 	"encoding/xml"
+	"image"
 	"image/color"
 	"strings"
 	"testing"
@@ -164,5 +165,25 @@ func TestRenderSVG_FontStylesAndClasses(t *testing.T) {
 	}
 	if !strings.Contains(svgStr, `<line `) {
 		t.Errorf("expected <line ...> elements for checked task list checkbox in SVG output")
+	}
+}
+
+// SVG text uses CSS pixels, while the shared display list uses typographic
+// points measured with a 96 DPI Go font face. The same scale is required to
+// avoid excessive gaps between independently positioned styled text runs.
+func TestSVGPainter_PointToCSSPixelFontSize(t *testing.T) {
+	dl := &DisplayList{
+		Width: 200, Height: 100,
+		Items: []DisplayItem{{
+			Kind: ItemText, Text: "abc", Color: color.Black,
+			FontSize: 16, Point: image.Pt(10, 30),
+		}},
+	}
+	out, err := (&SVGPainter{}).PaintSVG(dl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `<text x="10" y="30" font-size="21.33"`) {
+		t.Fatalf("expected 16pt to become 21.33 CSS px at 96 DPI; got: %s", out)
 	}
 }
