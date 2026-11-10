@@ -3,11 +3,75 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/arran4/md2png/cmd"
 )
+
+func newUsageError(path string, kind cmd.UsageErrorKind, flag string, cause error, format string, args ...any) error {
+	return &cmd.UsageError{CommandPath: path, Flag: flag, Kind: kind, Err: cause, Message: fmt.Sprintf(format, args...)}
+}
+
+// parseGoFlags retains flag.FlagSet's grammar and value implementations while
+// classifying failures at their source, before human-readable messages exist.
+func parseGoFlags(fs *flag.FlagSet, args []string, path string) ([]string, bool, error) {
+	for len(args) > 0 {
+		arg := args[0]
+		if len(arg) < 2 || arg[0] != '-' {
+			return args, false, nil
+		}
+		if arg == "--" {
+			return args[1:], true, nil
+		}
+		name := arg[1:]
+		if name[0] == '-' {
+			name = name[1:]
+		}
+		if name == "" || name[0] == '-' || name[0] == '=' {
+			return nil, false, newUsageError(path, cmd.UsageInvalidArguments, "", nil, "bad flag syntax: %s", arg)
+		}
+		args = args[1:]
+		value, hasValue := "", false
+		if index := strings.IndexByte(name, '='); index >= 0 {
+			name, value, hasValue = name[:index], name[index+1:], true
+		}
+		f := fs.Lookup(name)
+		if f == nil {
+			if name == "help" || name == "h" {
+				fs.Usage()
+				return nil, false, flag.ErrHelp
+			}
+			return nil, false, newUsageError(path, cmd.UsageUnknownFlag, name, nil, "flag provided but not defined: -%s", name)
+		}
+		boolean, isBoolean := f.Value.(interface{ IsBoolFlag() bool })
+		isBoolean = isBoolean && boolean.IsBoolFlag()
+		if isBoolean && !hasValue {
+			value = "true"
+		} else if !hasValue {
+			if len(args) == 0 {
+				return nil, false, newUsageError(path, cmd.UsageMissingFlagValue, name, nil, "flag needs an argument: -%s", name)
+			}
+			value, args = args[0], args[1:]
+		}
+		if err := fs.Set(name, value); err != nil {
+			if custom, ok := f.Value.(*goFlagCustomValue); ok && custom.rawError {
+				return nil, false, err
+			}
+			if isBoolean {
+				if !hasValue {
+					return nil, false, newUsageError(path, cmd.UsageInvalidValue, name, err, "invalid boolean flag %s: %v", name, err)
+				}
+				return nil, false, newUsageError(path, cmd.UsageInvalidValue, name, err, "invalid boolean value %q for -%s: %v", value, name, err)
+			}
+			return nil, false, newUsageError(path, cmd.UsageInvalidValue, name, err, "invalid value %q for flag -%s: %v", value, name, err)
+		}
+	}
+	return nil, false, nil
+}
 
 type StringSlice []string
 
@@ -676,4 +740,44 @@ func (s *DurationPointerSlice) Set(value string) error {
 	}
 	*s = append(*s, &d)
 	return nil
+}
+
+type goFlagCustomValue struct {
+	set      func(string) error
+	rawError bool
+}
+
+func (v *goFlagCustomValue) Set(s string) error {
+	return v.set(s)
+}
+
+func (v *goFlagCustomValue) String() string {
+	return ""
+}
+
+type goFlagBoolCustomValue struct {
+	set func(string) error
+}
+
+func (v *goFlagBoolCustomValue) Set(s string) error {
+	return v.set(s)
+}
+
+func (v *goFlagBoolCustomValue) String() string {
+	return ""
+}
+
+func (v *goFlagBoolCustomValue) IsBoolFlag() bool {
+	return true
+}
+
+func goFlagCustom(set func(string) error, isBool bool) flag.Value {
+	if isBool {
+		return &goFlagBoolCustomValue{set: set}
+	}
+	return &goFlagCustomValue{set: set}
+}
+
+func goFlagIO(set func(string) error) flag.Value {
+	return &goFlagCustomValue{set: set, rawError: true}
 }
