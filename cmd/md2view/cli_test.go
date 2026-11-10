@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -65,5 +66,23 @@ func TestGeneratedParser(t *testing.T) {
 				t.Errorf("CommandAction was never executed")
 			}
 		})
+	}
+}
+
+func TestNoSeparatedFlagAlias(t *testing.T) {
+	cmd, err := NewRoot("md2view", "test", "test", "test")
+	if err != nil {
+		t.Fatalf("NewRoot failed: %v", err)
+	}
+	err = cmd.Execute([]string{"--separated", "some/path.ttf"})
+	if err == nil {
+		t.Fatalf("expected error when passing nonexistent --separated flag, but got nil")
+	}
+
+	var buf strings.Builder
+	_ = executeUsage(&buf, "md2view_usage.txt", UsageDataRootCmd{cmd, false})
+	usage := buf.String()
+	if strings.Contains(usage, "--separated") {
+		t.Errorf("expected usage text to not advertise --separated, got:\n%s", usage)
 	}
 }

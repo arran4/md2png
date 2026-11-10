@@ -120,7 +120,7 @@ func TestTransparency_JPEG_Rejection(t *testing.T) {
 
 	format := "jpeg"
 	transparent := true
-	err := cli.Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, &transparent, nil, nil, nil, nil, nil, nil, &format, nil, nil, nil, nil)
+	err := cli.Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, &transparent, nil, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error encoding transparent image as JPEG, got nil")
 	}
@@ -139,7 +139,7 @@ func TestTransparency_GIF_Encoding(t *testing.T) {
 
 	format := "gif"
 	transparent := true
-	err := cli.Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, &transparent, nil, nil, nil, nil, nil, nil, &format, nil, nil, nil, nil)
+	err := cli.Md2png(&inPath, &outPath, nil, nil, nil, nil, nil, &transparent, nil, nil, nil, nil, nil, nil, nil, nil, nil, &format, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("GIF transparent render failed: %v", err)
 	}

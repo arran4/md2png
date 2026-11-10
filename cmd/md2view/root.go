@@ -83,6 +83,9 @@ type RootCmd struct {
 	fontRegular         *string
 	fontBold            *string
 	fontMono            *string
+	fontItalic          *string
+	fontBoldItalic      *string
+	fontFallback        *string
 	footnoteLinks       *bool
 	footnoteImages      *bool
 	maxHeight           *int
@@ -196,6 +199,21 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.Func("fontitalic", "flag: Path to TTF for italic text (optional; default Go Italic)", func(s string) error {
+		c.fontItalic = &s
+		return nil
+	})
+
+	c.Func("fontbolditalic", "flag: Path to TTF for bold italic text (optional; default Go Bold Italic)", func(s string) error {
+		c.fontBoldItalic = &s
+		return nil
+	})
+
+	c.Func("font-fallback", "flag: Comma separated paths to fallback TTF/OTF fonts", func(s string) error {
+		c.fontFallback = &s
+		return nil
+	})
+
 	c.BoolFunc("footnote-links", "flag: Add footnotes for link destinations", func(s string) error {
 		parsed, err := strconv.ParseBool(s)
 		if err != nil {
@@ -258,7 +276,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
 		if err != nil {
 			if errors.Is(err, cmd.ErrPrintHelp) {
 				c.Usage()
@@ -472,6 +490,42 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				s := value
 				c.fontMono = &s
+
+			case "fontItalic", "fontitalic":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.fontItalic = &s
+
+			case "fontBoldItalic", "fontbolditalic":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.fontBoldItalic = &s
+
+			case "fontFallback", "font-fallback":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return fmt.Errorf("flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.fontFallback = &s
 
 			case "footnoteLinks", "footnote-links":
 				if hasValue {

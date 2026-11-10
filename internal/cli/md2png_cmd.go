@@ -22,6 +22,9 @@ func Md2png(
 	fontRegular *string, // flag: --font Path to TTF for regular text (optional; default Go Regular)
 	fontBold *string, // flag: --fontbold Path to TTF for bold text (optional; default Go Bold)
 	fontMono *string, // flag: --fontmono Path to TTF for mono/code (optional; default Go Mono)
+	fontItalic *string, // flag: --fontitalic Path to TTF for italic text (optional; default Go Italic)
+	fontBoldItalic *string, // flag: --fontbolditalic Path to TTF for bold italic text (optional; default Go Bold Italic)
+	fontFallback *string, // flag: --font-fallback Comma separated paths to fallback TTF/OTF fonts
 	footnoteLinks *bool, // flag: --footnote-links Add footnotes for link destinations (default: true)
 	footnoteImages *bool, // flag: --footnote-images Add footnotes for image destinations (default: false)
 	maxHeight *int, // flag: --max-height Maximum output height in pixels (0 for default)
@@ -70,7 +73,12 @@ func Md2png(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, themeFile, transparent, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, baseDir)
+	opts, err := ConvertCommandArgsToRenderOptions(
+		strict, width, margin, pt, theme, themeFile, transparent,
+		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
+		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
+		baseDir,
+	)
 	if err != nil {
 		return err
 	}

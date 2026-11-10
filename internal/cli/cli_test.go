@@ -12,7 +12,7 @@ func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 		t.Fatalf("expected image, got nil")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -50,7 +50,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 
 func TestCLIDisableHighlighting(t *testing.T) {
 	// Default absent behavior
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping true
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -68,7 +68,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping false
-	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, "")
+	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, "")
 	if err3 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
 	}
@@ -78,7 +78,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 }
 
 func TestCLITableFitWidthEquivalence(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestCLITableFitWidthEquivalence(t *testing.T) {
 		t.Errorf("expected TableFitWidth to be true")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -110,7 +110,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if errCLI != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", errCLI)
 	}
@@ -121,7 +121,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 	}
 
 	if resLibrary.Image.Bounds().Dx() != resCLI.Image.Bounds().Dx() {
-		t.Fatalf("Library width %d did not match CLI width %d", resLibrary.Image.Bounds().Dx(), resCLI.Image.Bounds().Dx())
+		t.Fatalf("CLI output width %d did not match Library render width %d", resLibrary.Image.Bounds().Dx(), resCLI.Image.Bounds().Dx())
 	}
 }
 
@@ -139,7 +139,7 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, "")
+			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, "")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -169,7 +169,7 @@ link {
 
 	themeName := "dark"
 	// --theme-file overrides --theme "dark"
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, &themeName, &themePath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, &themeName, &themePath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +184,7 @@ link {
 	if err := os.WriteFile(badPath, []byte("unknown { bad: color; }"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, &badPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, &badPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err == nil {
 		t.Fatal("expected error with bad theme file, got nil")
 	}
