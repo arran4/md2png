@@ -17,6 +17,8 @@ func Md2png(
 	margin *int, // flag: --margin Margin in pixels (0 for default)
 	pt *float64, // flag: --pt Base font size in points (paragraph) (0 for default)
 	theme *string, // flag: --theme Theme: light|dark (default: "light")
+	themeFile *string, // flag: --theme-file Path to CSS theme file
+	transparent *bool, // flag: --transparent Explicit transparent page background
 	fontRegular *string, // flag: --font Path to TTF for regular text (optional; default Go Regular)
 	fontBold *string, // flag: --fontbold Path to TTF for bold text (optional; default Go Bold)
 	fontMono *string, // flag: --fontmono Path to TTF for mono/code (optional; default Go Mono)
@@ -32,7 +34,7 @@ func Md2png(
 	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
 	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
 ) error {
-	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth)
+	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth, themeFile, transparent)
 }
 
 // RunMd2png executes the md2png CLI command with explicit I/O streams.
@@ -60,6 +62,8 @@ func RunMd2png(
 	tableFitWidth *bool,
 	disableHighlighting *bool,
 	codeTabWidth *int,
+	themeFile *string,
+	transparent *bool,
 ) error {
 	var data []byte
 	var baseDir string
@@ -101,7 +105,7 @@ func RunMd2png(
 	}
 
 	opts, err := ConvertCommandArgsToRenderOptions(
-		strict, width, margin, pt, theme,
+		strict, width, margin, pt, theme, themeFile, transparent,
 		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
 		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
 		baseDir,
