@@ -13,7 +13,7 @@ import (
 func TestBatch_EmptyInputs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := RunBatch(&stdout, &stderr, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error with empty inputs, got nil")
 	}
@@ -32,7 +32,7 @@ func TestBatch_UnsupportedFormat(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	badFormat := "bmp"
 	err := RunBatch(&stdout, &stderr, nil, nil, &badFormat, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, f)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, f)
 	if err == nil {
 		t.Fatal("expected error with unsupported format, got nil")
 	}
@@ -62,7 +62,7 @@ func TestBatch_DryRun(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := RunBatch(&stdout, &stderr, &outDir, nil, nil, nil, &isDryRun,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, f1, subDir)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, f1, subDir)
 	if err != nil {
 		t.Fatalf("unexpected dry-run error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestBatch_OutputCollision(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	// Passing two standalone files with the same basename into the same outDir causes collision
 	err := RunBatch(&stdout, &stderr, &outDir, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fA, fB)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fA, fB)
 	if err == nil {
 		t.Fatal("expected collision error, got nil")
 	}
@@ -141,7 +141,7 @@ func TestBatch_RenderDirectoryAndFiles(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := RunBatch(&stdout, &stderr, &outDir, &concurrency, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, rootFile, docDir)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, rootFile, docDir)
 	if err != nil {
 		t.Fatalf("batch render failed: %v\nstderr: %s", err, stderr.String())
 	}
@@ -189,7 +189,7 @@ func TestBatch_PartialFailureAndContinueOnError(t *testing.T) {
 		cont := false
 		var stdout, stderr bytes.Buffer
 		err := RunBatch(&stdout, &stderr, &outDir, nil, nil, &cont, nil,
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, goodFile, badFile)
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, goodFile, badFile)
 		if err == nil {
 			t.Fatal("expected error with strict failure, got nil")
 		}
@@ -203,7 +203,7 @@ func TestBatch_PartialFailureAndContinueOnError(t *testing.T) {
 		cont := true
 		var stdout, stderr bytes.Buffer
 		err := RunBatch(&stdout, &stderr, &outDir, nil, nil, &cont, nil,
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, goodFile, badFile)
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, goodFile, badFile)
 		if err == nil {
 			t.Fatal("expected error with strict failure, got nil")
 		}
@@ -248,7 +248,7 @@ func TestBatch_RelativeImageBaseDir(t *testing.T) {
 
 	// Strict=true ensures that if relative image cannot be found from the file's dir, it fails
 	err = RunBatch(&stdout, &stderr, &outDir, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, subDir)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &strict, nil, nil, nil, subDir)
 	if err != nil {
 		t.Fatalf("batch render failed to resolve relative image: %v\nstderr: %s", err, stderr.String())
 	}

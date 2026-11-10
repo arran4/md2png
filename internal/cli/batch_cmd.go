@@ -28,6 +28,9 @@ import (
 //	fontRegular: (from parent) Path to TTF for regular text (optional; default Go Regular)
 //	fontBold: (from parent) Path to TTF for bold text (optional; default Go Bold)
 //	fontMono: (from parent) Path to TTF for mono/code (optional; default Go Mono)
+//	fontItalic: (from parent) Path to TTF for italic text (optional; default Go Italic)
+//	fontBoldItalic: (from parent) Path to TTF for bold italic text (optional; default Go Bold Italic)
+//	fontFallback: (from parent) Comma separated paths to fallback TTF/OTF fonts
 //	footnoteLinks: (from parent) Add footnotes for link destinations (default: true)
 //	footnoteImages: (from parent) Add footnotes for image destinations (default: false)
 //	maxHeight: (from parent) Maximum output height in pixels (0 for default)
@@ -49,6 +52,9 @@ func Batch(
 	fontRegular *string,
 	fontBold *string,
 	fontMono *string,
+	fontItalic *string,
+	fontBoldItalic *string,
+	fontFallback *string,
 	footnoteLinks *bool,
 	footnoteImages *bool,
 	maxHeight *int,
@@ -59,7 +65,7 @@ func Batch(
 	inputs ...string,
 ) error {
 	return RunBatch(os.Stdout, os.Stderr, outDir, concurrency, format, continueOnError, dryRun,
-		width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages,
+		width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages,
 		maxHeight, strict, tableFitWidth, disableHighlighting, codeTabWidth, inputs...)
 }
 
@@ -86,6 +92,9 @@ func RunBatch(
 	fontRegular *string,
 	fontBold *string,
 	fontMono *string,
+	fontItalic *string,
+	fontBoldItalic *string,
+	fontFallback *string,
 	footnoteLinks *bool,
 	footnoteImages *bool,
 	maxHeight *int,
@@ -140,7 +149,7 @@ func RunBatch(
 	}
 
 	// Validate render options once upfront before starting workers
-	if _, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, ""); err != nil {
+	if _, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, ""); err != nil {
 		return fmt.Errorf("md2png batch: option error: %w", err)
 	}
 
@@ -172,7 +181,7 @@ func RunBatch(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			workerOpts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, "")
+			workerOpts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, "")
 			if err != nil {
 				errMu.Lock()
 				taskErrors = append(taskErrors, fmt.Sprintf("options: %v", err))

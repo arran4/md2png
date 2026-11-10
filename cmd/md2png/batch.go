@@ -312,7 +312,7 @@ func (c *RootCmd) NewBatch() *Batch {
 
 	v.CommandAction = func(c *Batch) error {
 
-		err := cli.Batch(c.outDir, c.concurrency, c.format, c.continueOnError, c.dryRun, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.inputs...)
+		err := cli.Batch(c.outDir, c.concurrency, c.format, c.continueOnError, c.dryRun, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.inputs...)
 		if err != nil {
 			var exitCode *cmd.ErrExitCode
 			if errors.As(err, &exitCode) {

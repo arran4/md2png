@@ -17,6 +17,9 @@ Subcommands:
     {{formatFlagRow 30 20 "--font-regular *string" "(default: light)" "Path to TTF for regular text (optional; default Go Regular)"}}
     {{formatFlagRow 30 20 "--font-bold *string" "" "Path to TTF for bold text (optional; default Go Bold)"}}
     {{formatFlagRow 30 20 "--font-mono *string" "" "Path to TTF for mono/code (optional; default Go Mono)"}}
+    {{formatFlagRow 30 20 "--font-italic *string" "" "Path to TTF for italic text (optional; default Go Italic)"}}
+    {{formatFlagRow 30 20 "--font-bold-italic *string" "" "Path to TTF for bold italic text (optional; default Go Bold Italic)"}}
+    {{formatFlagRow 30 20 "--font-fallback *string" "" "Comma separated paths to fallback TTF/OTF fonts"}}
     {{formatFlagRow 30 20 "--footnote-links *bool" "(default: true)" "Add footnotes for link destinations"}}
     {{formatFlagRow 30 20 "--footnote-images *bool" "(default: false)" "Add footnotes for image destinations"}}
     {{formatFlagRow 30 20 "--max-height *int" "(default: false)" "Maximum output height in pixels (0 for default)"}}
