@@ -8,7 +8,6 @@ import (
 	"html"
 	"image"
 	"image/color"
-	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -395,7 +394,7 @@ func (ff *FontAndFace) getFace(size float64) font.Face {
 // ---- Layout primitives ----
 
 type canvas struct {
-	img     *image.RGBA
+	dl      *DisplayList
 	w, h    int
 	maxH    int // Maximum permitted height
 	margin  int
@@ -407,32 +406,21 @@ type canvas struct {
 }
 
 func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, maxH int) *canvas {
-	startH := 8192
-	if startH > maxH {
-		startH = maxH
-	}
-
-	if int64(width)*int64(startH) > 4*1024*1024 {
-		startH = int((4 * 1024 * 1024) / int64(width))
-	}
-	if startH < 64 {
-		startH = 64
-	}
+	startH := 1024
 	if maxH > 0 && startH > maxH {
 		startH = maxH
 	}
 
-	if int64(width)*int64(startH) > maxTotalPixels {
-		startH = int(maxTotalPixels / int64(width))
+	dl := &DisplayList{
+		Width:   width,
+		Height:  startH,
+		BGColor: th.BG,
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, width, startH))
-	draw.Draw(img, img.Bounds(), image.NewUniform(th.BG), image.Point{}, draw.Src)
-
 	return &canvas{
-		img:     img,
+		dl:      dl,
 		w:       width,
-		h:       img.Bounds().Dy(),
+		h:       startH,
 		maxH:    maxH,
 		margin:  margin,
 		cursorY: margin,
@@ -444,55 +432,45 @@ func newCanvas(width int, margin int, th Theme, fonts Fonts, ptSize float64, max
 }
 
 func (c *canvas) ensureHeightAbs(targetY int) {
-	if targetY <= c.h {
-		return
-	}
 	if c.maxH > 0 && targetY > c.maxH {
 		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d)", targetY, c.maxH))
 	}
 
-	newH := c.h * 2
-	if newH < targetY+4096 {
-		newH = targetY + 4096
+	if int64(c.w)*int64(targetY) > maxTotalPixels {
+		maxPermitted := int(maxTotalPixels / int64(c.w))
+		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d, pixel budget)", targetY, maxPermitted))
 	}
-	if c.maxH > 0 && newH > c.maxH {
-		newH = c.maxH
+	if targetY > c.h {
+		c.h = targetY
 	}
+}
 
-	if int64(c.w)*int64(newH) > maxTotalPixels {
-		newH = int(maxTotalPixels / int64(c.w))
+func (c *canvas) fontStyleFor(fnt *FontAndFace) FontStyle {
+	if fnt == nil {
+		return FontStyleRegular
 	}
-	if targetY > newH {
-		panic(fmt.Errorf("md2png: maximum output height limit exceeded (%d > %d, pixel budget)", targetY, newH))
+	switch fnt {
+	case c.fonts.Bold:
+		return FontStyleBold
+	case c.fonts.Italic:
+		return FontStyleItalic
+	case c.fonts.BoldItalic:
+		return FontStyleBoldItalic
+	case c.fonts.Mono:
+		return FontStyleMono
+	default:
+		return FontStyleRegular
 	}
-
-	newImg := image.NewRGBA(image.Rect(0, 0, c.w, newH))
-	draw.Draw(newImg, newImg.Bounds(), image.NewUniform(c.th.BG), image.Point{}, draw.Src)
-	draw.Draw(newImg, c.img.Bounds(), c.img, image.Point{}, draw.Src)
-
-	c.img = newImg
-	c.h = newH
 }
 
 func (c *canvas) drawString(fnt *FontAndFace, size float64, col color.Color, s string, x, baseline int) int {
 	if fnt == nil || s == "" {
 		return x
 	}
-	runs := fnt.segmentRuns(s)
-	var d font.Drawer
-	d.Dst = c.img
-	d.Src = image.NewUniform(col)
-	d.Dot = fixed.Point26_6{X: fixed.I(x), Y: fixed.I(baseline)}
-
-	for _, run := range runs {
-		face := run.fnt.getFace(size)
-		if face == nil {
-			continue
-		}
-		d.Face = face
-		d.DrawString(run.text)
-	}
-	return d.Dot.X.Round()
+	style := c.fontStyleFor(fnt)
+	c.dl.AddText(s, fnt, style, size, col, image.Pt(x, baseline))
+	adv := int(measureWidth(fnt, size, s))
+	return x + adv
 }
 
 func getNodeText(n ast.Node, md []byte) string {
@@ -543,7 +521,7 @@ func (c *canvas) drawHRule() {
 	y := c.cursorY + 4
 	c.ensureHeightAbs(y + 2)
 	rect := image.Rect(c.margin, y, c.w-c.margin, y+2)
-	draw.Draw(c.img, rect, image.NewUniform(c.th.HRule), image.Point{}, draw.Src)
+	c.dl.AddRect(rect, c.th.HRule)
 	c.cursorY = y + 10
 }
 
@@ -551,7 +529,7 @@ func (c *canvas) drawBlockquoteBar(topY, height int) {
 	x0 := c.margin
 	c.ensureHeightAbs(topY + height)
 	rect := image.Rect(x0, topY, x0+4, topY+height)
-	draw.Draw(c.img, rect, image.NewUniform(c.th.QuoteBar), image.Point{}, draw.Src)
+	c.dl.AddRect(rect, c.th.QuoteBar)
 }
 
 type codeSpan struct {
@@ -757,7 +735,7 @@ func (c *canvas) drawCodeBlock(spans [][]codeSpan, left, right int, size float64
 
 	// bg
 	rect := image.Rect(left, top, right, top+height)
-	draw.Draw(c.img, rect, image.NewUniform(c.th.CodeBG), image.Point{}, draw.Src)
+	c.dl.AddRect(rect, c.th.CodeBG)
 
 	// draw text
 	y := top + pad + int(size)
@@ -1065,15 +1043,18 @@ const (
 )
 
 type textToken struct {
-	text      string
-	font      *FontAndFace
-	size      float64
-	color     color.Color
-	underline bool
-	newline   bool
-	image     image.Image
-	imgAlign  string
-	center    bool
+	text           string
+	font           *FontAndFace
+	size           float64
+	color          color.Color
+	underline      bool
+	strikethrough  bool
+	isTaskCheckBox bool
+	isChecked      bool
+	newline        bool
+	image          image.Image
+	imgAlign       string
+	center         bool
 }
 
 func (r *renderer) resolveImageDimensionsAndAlignment(imgNode *ast.Image, img image.Image) (int, int, string) {
@@ -1570,13 +1551,66 @@ func (r *renderer) resolveRemoteImage(dest string) (string, func() (image.Image,
 	return url, loader, nil
 }
 
+type inlineStyle struct {
+	font          *FontAndFace
+	size          float64
+	color         color.Color
+	isBold        bool
+	isItalic      bool
+	strikethrough bool
+	underline     bool
+}
+
+func (r *renderer) resolveStyledFont(st inlineStyle) *FontAndFace {
+	if st.font == r.c.fonts.Mono {
+		return st.font
+	}
+	isBold := st.isBold || (st.font != nil && st.font == r.c.fonts.Bold)
+	isItalic := st.isItalic || (st.font != nil && st.font == r.c.fonts.Italic)
+
+	if isBold && isItalic {
+		if r.c.fonts.BoldItalic != nil {
+			return r.c.fonts.BoldItalic
+		}
+		if r.c.fonts.Bold != nil {
+			return r.c.fonts.Bold
+		}
+		if r.c.fonts.Italic != nil {
+			return r.c.fonts.Italic
+		}
+	} else if isBold {
+		if r.c.fonts.Bold != nil {
+			return r.c.fonts.Bold
+		}
+	} else if isItalic {
+		if r.c.fonts.Italic != nil {
+			return r.c.fonts.Italic
+		}
+	}
+	if st.font != nil {
+		return st.font
+	}
+	return r.c.fonts.Regular
+}
+
 func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFace, size float64, color color.Color, out *[]textToken) {
+	st := inlineStyle{
+		font:  font,
+		size:  size,
+		color: color,
+	}
+	r.collectInlineTokensStyled(node, md, st, out)
+}
+
+func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inlineStyle, out *[]textToken) {
 	if r.renderErr != nil {
 		return
 	}
-	if font == nil {
-		font = r.c.fonts.Regular
+	if st.font == nil {
+		st.font = r.c.fonts.Regular
 	}
+
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		if r.htmlState.suppressedTag != "" || r.htmlState.inComment {
 			if _, ok := child.(*ast.RawHTML); !ok {
@@ -1589,10 +1623,18 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			// separate opening and closing RawHTML nodes.
 			text := string(c.Segment.Value(md))
 			if text != "" {
+				effFont := r.resolveStyledFont(st)
 				parts := strings.Split(text, "\n")
 				for i, part := range parts {
 					if part != "" {
-						*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+						*out = append(*out, textToken{
+							text:          part,
+							font:          effFont,
+							size:          st.size,
+							color:         st.color,
+							underline:     st.underline,
+							strikethrough: st.strikethrough,
+						})
 					}
 					if i < len(parts)-1 {
 						*out = append(*out, textToken{newline: true})
@@ -1602,16 +1644,33 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 			if c.SoftLineBreak() || c.HardLineBreak() {
 				*out = append(*out, textToken{newline: true})
 			}
+		case *ast.String:
+			text := string(c.Value)
+			if text != "" {
+				effFont := r.resolveStyledFont(st)
+				*out = append(*out, textToken{
+					text:          text,
+					font:          effFont,
+					size:          st.size,
+					color:         st.color,
+					underline:     st.underline,
+					strikethrough: st.strikethrough,
+				})
+			}
 		case *ast.Link:
+			dest := string(c.Destination)
+			linkStyle := st
+			linkStyle.color = r.c.th.Link
+			linkStyle.underline = true
 			before := len(*out)
-			r.collectInlineTokens(c, md, font, size, r.c.th.Link, out)
+			r.collectInlineTokensStyled(c, md, linkStyle, out)
 			for i := before; i < len(*out); i++ {
 				(*out)[i].color = r.c.th.Link
 				(*out)[i].underline = true
 			}
 			if r.linkFootnotes {
-				idx := r.ensureFootnote(string(c.Destination))
-				r.appendFootnoteMarker(out, size, idx)
+				idx := r.ensureFootnote(dest)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.AutoLink:
 			label := string(c.Label(md))
@@ -1619,11 +1678,19 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				label = string(c.URL(md))
 			}
 			if label != "" {
-				*out = append(*out, textToken{text: label, font: font, size: size, color: r.c.th.Link, underline: true})
+				effFont := r.resolveStyledFont(st)
+				*out = append(*out, textToken{
+					text:          label,
+					font:          effFont,
+					size:          st.size,
+					color:         r.c.th.Link,
+					underline:     true,
+					strikethrough: st.strikethrough,
+				})
 			}
 			if r.linkFootnotes {
 				idx := r.ensureFootnote(string(c.URL(md)))
-				r.appendFootnoteMarker(out, size, idx)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Image:
 			rawDest := strings.TrimSpace(string(c.Destination))
@@ -1672,32 +1739,61 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 					fallbackColor = r.c.th.Warning
 				}
 				if fallback != "" {
-					*out = append(*out, textToken{text: fallback, font: font, size: size, color: fallbackColor})
+					*out = append(*out, textToken{
+						text:          fallback,
+						font:          r.resolveStyledFont(st),
+						size:          st.size,
+						color:         fallbackColor,
+						strikethrough: st.strikethrough,
+					})
 				}
 			}
 			if r.imageFootnotes {
 				idx := r.ensureFootnote(rawDest)
-				r.appendFootnoteMarker(out, size, idx)
+				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Paragraph:
-			r.collectInlineTokens(c, md, font, size, color, out)
+			r.collectInlineTokensStyled(c, md, st, out)
 			if child.NextSibling() != nil {
 				*out = append(*out, textToken{newline: true})
 			}
 		case *ast.Emphasis:
-			nextFont := font
-			if c.Level >= 2 && r.c.fonts.Bold != nil {
-				nextFont = r.c.fonts.Bold
+			nextStyle := st
+			if c.Level == 1 {
+				nextStyle.isItalic = true
+			} else if c.Level == 2 {
+				nextStyle.isBold = true
+			} else if c.Level >= 3 {
+				nextStyle.isBold = true
+				nextStyle.isItalic = true
 			}
-			r.collectInlineTokens(c, md, nextFont, size, color, out)
+			r.collectInlineTokensStyled(c, md, nextStyle, out)
+		case *extensionAST.Strikethrough:
+			nextStyle := st
+			nextStyle.strikethrough = true
+			r.collectInlineTokensStyled(c, md, nextStyle, out)
+		case *extensionAST.TaskCheckBox:
+			*out = append(*out, textToken{
+				isTaskCheckBox: true,
+				isChecked:      c.IsChecked,
+				size:           st.size,
+				color:          st.color,
+			})
 		case *ast.CodeSpan:
 			mono := r.c.fonts.Mono
 			if mono == nil {
-				mono = font
+				mono = st.font
 			}
 			txt := getNodeText(c, md)
 			if txt != "" {
-				*out = append(*out, textToken{text: txt, font: mono, size: size * 0.95, color: color})
+				*out = append(*out, textToken{
+					text:          txt,
+					font:          mono,
+					size:          st.size * 0.95,
+					color:         st.color,
+					strikethrough: st.strikethrough,
+					underline:     st.underline,
+				})
 			}
 		case *extensionAST.FootnoteLink:
 			idx := c.Index
@@ -1740,23 +1836,32 @@ func (r *renderer) collectInlineTokens(node ast.Node, md []byte, font *FontAndFa
 				if part == "\n" {
 					*out = append(*out, textToken{newline: true})
 				} else if part != "" {
-					*out = append(*out, textToken{text: part, font: font, size: size, color: color})
+					*out = append(*out, textToken{
+						text:          part,
+						font:          r.resolveStyledFont(st),
+						size:          st.size,
+						color:         st.color,
+						strikethrough: st.strikethrough,
+					})
 				}
 			}
 		default:
 			if child.HasChildren() {
-				r.collectInlineTokens(child, md, font, size, color, out)
+				r.collectInlineTokensStyled(child, md, st, out)
 			}
 		}
 	}
 }
 
 type styledWord struct {
-	text      string
-	font      *FontAndFace
-	size      float64
-	color     color.Color
-	underline bool
+	text           string
+	font           *FontAndFace
+	size           float64
+	color          color.Color
+	underline      bool
+	strikethrough  bool
+	isTaskCheckBox bool
+	isChecked      bool
 }
 
 func splitTextPreserveSpaces(s string) []string {
@@ -1817,6 +1922,29 @@ type lineMetric struct {
 	height   int
 }
 
+func (c *canvas) drawTaskCheckBox(x, y, size int, checked bool, fg color.Color) {
+	if size < 8 {
+		size = 8
+	}
+	c.ensureHeightAbs(y + size)
+
+	c.dl.AddRect(image.Rect(x, y, x+size, y+1), fg)
+	c.dl.AddRect(image.Rect(x, y+size-1, x+size, y+size), fg)
+	c.dl.AddRect(image.Rect(x, y+1, x+1, y+size-1), fg)
+	c.dl.AddRect(image.Rect(x+size-1, y+1, x+size, y+size-1), fg)
+
+	if checked {
+		kx0, ky0 := x+3, y+size/2
+		kx1, ky1 := x+size*2/5, y+size-3
+		kx2, ky2 := x+size-3, y+3
+
+		c.dl.AddLine(image.Pt(kx0, ky0), image.Pt(kx1, ky1), fg, 1)
+		c.dl.AddLine(image.Pt(kx0, ky0-1), image.Pt(kx1, ky1-1), fg, 1)
+		c.dl.AddLine(image.Pt(kx1, ky1), image.Pt(kx2, ky2), fg, 1)
+		c.dl.AddLine(image.Pt(kx1, ky1-1), image.Pt(kx2, ky2-1), fg, 1)
+	}
+}
+
 func (c *canvas) drawTokens(tokens []textToken, left, right int, align extensionAST.Alignment) []lineMetric {
 	if len(tokens) == 0 {
 		return nil
@@ -1857,7 +1985,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		lineWidthForAlign := 0
 		trailingSpaces := 0
 		for i := len(line) - 1; i >= 0; i-- {
-			if strings.TrimSpace(line[i].text) == "" {
+			if !line[i].isTaskCheckBox && strings.TrimSpace(line[i].text) == "" {
 				trailingSpaces++
 			} else {
 				break
@@ -1865,6 +1993,12 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		}
 		line = line[:len(line)-trailingSpaces]
 		for _, w := range line {
+			if w.isTaskCheckBox {
+				boxSize := int(math.Round(w.size * 0.75))
+				gap := int(math.Round(w.size * 0.35))
+				lineWidthForAlign += boxSize + gap
+				continue
+			}
 			lineWidthForAlign += int(math.Ceil(measureWidth(w.font, w.size, w.text)))
 		}
 		if align == extensionAST.AlignCenter && lineWidthForAlign < (right-left) {
@@ -1872,11 +2006,38 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 		} else if align == extensionAST.AlignRight && lineWidthForAlign < (right-left) {
 			x = right - lineWidthForAlign
 		}
-		for _, w := range line {
+		for i := 0; i < len(line); i++ {
+			w := line[i]
+			if w.isTaskCheckBox {
+				boxSize := int(math.Round(w.size * 0.75))
+				gap := int(math.Round(w.size * 0.35))
+				boxTop := baseline - int(w.size*0.72)
+				c.drawTaskCheckBox(x, boxTop, boxSize, w.isChecked, w.color)
+				x += boxSize + gap
+				continue
+			}
 			if w.font == nil {
 				w.font = c.fonts.Regular
 			}
-			newX := c.drawString(w.font, w.size, w.color, w.text, x, baseline)
+
+			// Coalesce contiguous words on this line with identical styling.
+			combinedText := w.text
+			for i+1 < len(line) {
+				next := line[i+1]
+				if !next.isTaskCheckBox &&
+					next.font == w.font &&
+					next.size == w.size &&
+					next.color == w.color &&
+					next.underline == w.underline &&
+					next.strikethrough == w.strikethrough {
+					combinedText += next.text
+					i++
+				} else {
+					break
+				}
+			}
+
+			newX := c.drawString(w.font, w.size, w.color, combinedText, x, baseline)
 			width := newX - x
 			if w.underline && width > 0 {
 				underlineY := baseline + int(w.size*0.12)
@@ -1884,7 +2045,13 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					underlineY = baseline + 1
 				}
 				rect := image.Rect(x, underlineY, x+width, underlineY+1)
-				draw.Draw(c.img, rect, image.NewUniform(w.color), image.Point{}, draw.Src)
+				c.dl.AddRect(rect, w.color)
+			}
+			if w.strikethrough && width > 0 {
+				strikeY := baseline - int(w.size*0.28)
+				thickness := int(math.Max(1, math.Round(w.size*0.06)))
+				rect := image.Rect(x, strikeY, x+width, strikeY+thickness)
+				c.dl.AddRect(rect, w.color)
 			}
 			x = newX
 		}
@@ -1942,7 +2109,7 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			c.ensureHeightAbs(startY + drawHeight + int(c.ptSize*0.6))
 
 			rect := image.Rect(x, startY, x+drawWidth, startY+drawHeight)
-			draw.Draw(c.img, rect, img, bounds.Min, draw.Over)
+			c.dl.AddImage(img, rect)
 			baseline := startY + int(c.ptSize)
 			if baseline > rect.Max.Y {
 				baseline = rect.Max.Y
@@ -1953,6 +2120,25 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			metrics = append(metrics, lineMetric{baseline: baseline, height: drawHeight})
 			c.cursorY += drawHeight
 			c.cursorY += int(c.ptSize * 0.6)
+			continue
+		}
+		if tok.isTaskCheckBox {
+			boxSize := int(math.Round(tok.size * 0.75))
+			gap := int(math.Round(tok.size * 0.35))
+			totalW := float64(boxSize + gap)
+			if lineWidth+totalW > maxWidth && len(line) > 0 {
+				flush(false)
+			}
+			line = append(line, styledWord{
+				isTaskCheckBox: true,
+				isChecked:      tok.isChecked,
+				size:           tok.size,
+				color:          tok.color,
+			})
+			if tok.size > lineMaxSize {
+				lineMaxSize = tok.size
+			}
+			lineWidth += totalW
 			continue
 		}
 		font := tok.font
@@ -1970,7 +2156,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 				if len(line) == 0 {
 					continue
 				}
-				line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+				line = append(line, styledWord{
+					text:          seg,
+					font:          font,
+					size:          tok.size,
+					color:         tok.color,
+					underline:     tok.underline,
+					strikethrough: tok.strikethrough,
+				})
 				lineWidth += segWidth
 				continue
 			}
@@ -1986,7 +2179,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 						charStr := string(r)
 						charWidth := math.Ceil(measureWidth(font, tok.size, charStr))
 						if currentWidth+charWidth > maxWidth && len(currentWord) > 0 {
-							line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+							line = append(line, styledWord{
+								text:          currentWord,
+								font:          font,
+								size:          tok.size,
+								color:         tok.color,
+								underline:     tok.underline,
+								strikethrough: tok.strikethrough,
+							})
 							if tok.size > lineMaxSize {
 								lineMaxSize = tok.size
 							}
@@ -1999,7 +2199,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 						}
 					}
 					if currentWord != "" {
-						line = append(line, styledWord{text: currentWord, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+						line = append(line, styledWord{
+							text:          currentWord,
+							font:          font,
+							size:          tok.size,
+							color:         tok.color,
+							underline:     tok.underline,
+							strikethrough: tok.strikethrough,
+						})
 						if tok.size > lineMaxSize {
 							lineMaxSize = tok.size
 						}
@@ -2008,7 +2215,14 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 					continue
 				}
 			}
-			line = append(line, styledWord{text: seg, font: font, size: tok.size, color: tok.color, underline: tok.underline})
+			line = append(line, styledWord{
+				text:          seg,
+				font:          font,
+				size:          tok.size,
+				color:         tok.color,
+				underline:     tok.underline,
+				strikethrough: tok.strikethrough,
+			})
 			if tok.size > lineMaxSize {
 				lineMaxSize = tok.size
 			}
@@ -2046,6 +2260,19 @@ func (r *renderer) renderList(list *ast.List, md []byte, level int) {
 }
 
 func (r *renderer) renderListItem(li *ast.ListItem, md []byte, level int, marker string, markerLeft, markerRight, contentLeft int) {
+	hasTaskBox := false
+	if first := li.FirstChild(); first != nil {
+		for c := first.FirstChild(); c != nil; c = c.NextSibling() {
+			if _, ok := c.(*extensionAST.TaskCheckBox); ok {
+				hasTaskBox = true
+				break
+			}
+		}
+	}
+	if hasTaskBox && marker == "•" {
+		marker = ""
+	}
+
 	startY := r.c.cursorY
 	markerDrawn := false
 	blockSpacing := int(r.baseSize * 0.5)
@@ -2418,10 +2645,10 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	tableLeft := r.c.margin
 	tableRight := tableLeft + tableWidth
 
-	borderColor := image.NewUniform(r.c.th.HRule)
+	borderColor := r.c.th.HRule
 	r.c.addVSpace(int(r.baseSize * 0.3))
 	tableTop := r.c.cursorY
-	draw.Draw(r.c.img, image.Rect(tableLeft, tableTop, tableRight, tableTop+border), borderColor, image.Point{}, draw.Src)
+	r.c.dl.AddRect(image.Rect(tableLeft, tableTop, tableRight, tableTop+border), borderColor)
 	y := tableTop + border
 
 	for _, row := range rows {
@@ -2461,7 +2688,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 		}
 		rowBottom := rowTop + maxCellHeight + 2*cellPadding
 		r.c.ensureHeightAbs(rowBottom + border)
-		draw.Draw(r.c.img, image.Rect(tableLeft, rowBottom, tableRight, rowBottom+border), borderColor, image.Point{}, draw.Src)
+		r.c.dl.AddRect(image.Rect(tableLeft, rowBottom, tableRight, rowBottom+border), borderColor)
 		y = rowBottom + border
 	}
 
@@ -2469,7 +2696,7 @@ func (r *renderer) renderTable(tbl *extensionAST.Table, md []byte) {
 	r.c.ensureHeightAbs(tableBottom + border)
 	x := tableLeft
 	for col := 0; col <= colCount; col++ {
-		draw.Draw(r.c.img, image.Rect(x, tableTop, x+border, tableBottom+border), borderColor, image.Point{}, draw.Src)
+		r.c.dl.AddRect(image.Rect(x, tableTop, x+border, tableBottom+border), borderColor)
 		if col < colCount {
 			x += colWidths[col] + border
 		}
@@ -3440,9 +3667,14 @@ func normalizeRenderOptions(opts *RenderOptions) error {
 	return nil
 }
 
-// RenderWithDiagnostics converts the provided Markdown document into a raster image using the
-// supplied options, returning both the result image and structured diagnostics.
-func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, resErr error) {
+// LayoutResult contains the intermediate DisplayList and diagnostics from layout.
+type LayoutResult struct {
+	DisplayList *DisplayList
+	Diagnostics []Diagnostic
+}
+
+// LayoutDocument converts Markdown into a DisplayList without allocating a raster image.
+func LayoutDocument(data []byte, opts RenderOptions) (res LayoutResult, resErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if err, ok := r.(error); ok && strings.HasPrefix(err.Error(), "md2png: maximum output height limit exceeded") {
@@ -3454,7 +3686,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	}()
 
 	if err := normalizeRenderOptions(&opts); err != nil {
-		return RenderResult{}, err
+		return LayoutResult{}, err
 	}
 
 	c := newCanvas(opts.Width, opts.Margin, opts.Theme, opts.Fonts, opts.BaseFontSize, opts.MaxHeight)
@@ -3498,11 +3730,11 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 		r.imageMemo = make(map[string]*memoizedImage)
 		fitWidth, err := r.measureTableFitWidth(data, doc)
 		if err != nil {
-			return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
+			return LayoutResult{Diagnostics: r.diagnostics}, err
 		}
 		if fitWidth > opts.Width {
 			if fitWidth > MaxAllowedWidth {
-				return RenderResult{Image: nil, Diagnostics: r.diagnostics}, ErrResourceLimit
+				return LayoutResult{Diagnostics: r.diagnostics}, ErrResourceLimit
 			}
 			opts.Width = fitWidth
 			// recreate canvas for new width
@@ -3511,7 +3743,7 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	}
 
 	if err := r.renderDocument(data, doc); err != nil {
-		return RenderResult{Image: nil, Diagnostics: r.diagnostics}, err
+		return LayoutResult{Diagnostics: r.diagnostics}, err
 	}
 
 	used := r.c.cursorY + opts.Margin
@@ -3520,10 +3752,29 @@ func RenderWithDiagnostics(data []byte, opts RenderOptions) (res RenderResult, r
 	}
 
 	r.c.ensureHeightAbs(used)
+	r.c.dl.Height = used
+	r.c.dl.Width = opts.Width
 
-	img := image.NewRGBA(image.Rect(0, 0, opts.Width, used))
-	draw.Draw(img, img.Bounds(), r.c.img, image.Point{}, draw.Src)
-	return RenderResult{Image: img, Diagnostics: r.diagnostics}, nil
+	return LayoutResult{
+		DisplayList: r.c.dl,
+		Diagnostics: r.diagnostics,
+	}, nil
+}
+
+// RenderWithDiagnostics converts the provided Markdown document into a raster image using the
+// supplied options, returning both the result image and structured diagnostics.
+func RenderWithDiagnostics(data []byte, opts RenderOptions) (RenderResult, error) {
+	layoutRes, err := LayoutDocument(data, opts)
+	if err != nil {
+		return RenderResult{Diagnostics: layoutRes.Diagnostics}, err
+	}
+	painter := &RasterPainter{}
+	img, err := painter.Paint(layoutRes.DisplayList)
+	if err != nil {
+		return RenderResult{Diagnostics: layoutRes.Diagnostics}, err
+	}
+	rgba, _ := img.(*image.RGBA)
+	return RenderResult{Image: rgba, Diagnostics: layoutRes.Diagnostics}, nil
 }
 
 // Render converts the provided Markdown document into a raster image using the

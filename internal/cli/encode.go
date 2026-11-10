@@ -157,3 +157,39 @@ func encodeToFileWithEncoder(
 	cleanup = false
 	return nil
 }
+
+func writeBytesToFile(outPath string, data []byte) error {
+	mode, err := outputFileMode(outPath)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(outPath)
+	tmpFile, err := os.CreateTemp(dir, "md2png-tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tmpName := tmpFile.Name()
+
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if err := tmpFile.Chmod(mode); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to set temporary file permissions: %w", err)
+	}
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write output: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	if err := os.Rename(tmpName, outPath); err != nil {
+		return fmt.Errorf("failed to replace destination file: %w", err)
+	}
+
+	return nil
+}

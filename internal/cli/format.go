@@ -15,8 +15,10 @@ func normalizeFormat(value string) (string, error) {
 		return "jpeg", nil
 	case "gif":
 		return "gif", nil
+	case "svg":
+		return "svg", nil
 	default:
-		return "", fmt.Errorf("unsupported output format %q (expected png, jpeg, or gif)", value)
+		return "", fmt.Errorf("unsupported output format %q (expected png, jpeg, gif, or svg)", value)
 	}
 }
 
@@ -32,7 +34,7 @@ func resolveFormat(outPath string, formatFlag *string) (string, error) {
 
 	if outPath == "-" {
 		if flagFormat == "" {
-			return "", errors.New("output to stdout requires explicit --format (e.g. png, jpeg, gif)")
+			return "", errors.New("output to stdout requires explicit --format (e.g. png, jpeg, gif, svg)")
 		}
 		return flagFormat, nil
 	}

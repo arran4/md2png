@@ -10,7 +10,7 @@
 - Handles headings (H1–H5), paragraphs, ordered and unordered lists, bold text, code blocks, block quotes, tables, and horizontal rules.
 - Dark and light themes, adjustable width, margin, and point size.
 - Optional custom fonts: `--font`, `--fontbold`, `--fontmono`.
-- Output format follows the `--out` extension.
+- Output format follows the `--out` extension (`.png`, `.jpg`, `.gif`, `.svg`).
 
 ---
 
@@ -48,7 +48,7 @@ Requires Go 1.22 or newer.
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--in` | Markdown input file, or stdin when empty | — |
-| `--out` | Output image (`.png`, `.jpg`, `.gif`) | `out.png` |
+| `--out` | Output file (`.png`, `.jpg`, `.gif`, `.svg`) | `out.png` |
 | `--width` | Image width in pixels | 1024 |
 | `--margin` | Margin in pixels | 48 |
 | `--pt` | Base font size (points) | 16 |
@@ -73,6 +73,15 @@ Render Markdown from disk:
 ```bash
 ./md2png --in example.md --out example.png
 ```
+
+Render directly to scalable vector SVG:
+
+```bash
+./md2png --in example.md --out example.svg
+```
+
+> [!NOTE]
+> **SVG Text and Font Portability Limitations**: Text runs in SVG output are rendered as scalable `<text>` elements styled with standard system font stacks (`-apple-system`, `Segoe UI`, `Roboto`, `Consolas`, monospace). Because different client environments and SVG viewers compute system font metrics with slight variations compared to local embedded TTF/OTF fonts, text positioning and wrapping are approximate. Custom fonts specified via `--font` are not embedded as SVG webfonts.
 
 Dark theme, wider frame, larger type:
 
@@ -362,7 +371,7 @@ Everything happens in memory; there is no HTML renderer or external process.
 - [x] Tables
 - [x] Inline images
 - [x] Syntax highlighting
-- [ ] SVG output
+- [x] SVG output
 - [x] Configurable themes via CSS-lite theme files
 
 ---

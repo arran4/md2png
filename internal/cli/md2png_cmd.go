@@ -117,6 +117,18 @@ func RunMd2png(
 		return err
 	}
 
+	if resolvedFormat == "svg" {
+		svgBytes, err := md2png.RenderSVG(data, opts)
+		if err != nil {
+			return err
+		}
+		if outPath == "-" {
+			_, err = os.Stdout.Write(svgBytes)
+			return err
+		}
+		return writeBytesToFile(outPath, svgBytes)
+	}
+
 	res, err := md2png.RenderWithDiagnostics(data, opts)
 
 	if len(res.Diagnostics) > 0 {
