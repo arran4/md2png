@@ -33,7 +33,7 @@ func Md2png(
 	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
 	footnoteOrder *string, // flag: --footnote-order Footnote ordering: authored-first|links-first (default: "authored-first")
 ) error {
-	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth)
+	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth, footnoteOrder)
 }
 
 // RunMd2png executes the md2png CLI command with explicit I/O streams.
@@ -61,6 +61,7 @@ func RunMd2png(
 	tableFitWidth *bool,
 	disableHighlighting *bool,
 	codeTabWidth *int,
+	footnoteOrder *string,
 ) error {
 	var data []byte
 	var baseDir string
