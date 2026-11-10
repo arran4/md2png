@@ -1,0 +1,43 @@
+name: SVG visual evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - feat/markdown-formatting-gfm
+    paths:
+      - 'svg_visual_samples_test.go'
+      - 'testdata/visual/svg-cases.txtar'
+      - 'svg.go'
+      - 'display_list.go'
+      - 'md2png.go'
+      - '.github/workflows/svg-visual-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-svg-examples:
+    name: Render SVG and PNG review samples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run tests and generate real outputs from txtar fixtures
+        run: go test -count=1 -v . -run '^TestSVGVisualSamples$' -args -write-visual-samples
+      - name: Show generated output checksums and file sizes
+        run: |
+          find testdata/visual/generated -maxdepth 1 -type f -print -exec wc -c {} \;
+          sha256sum testdata/visual/generated/*.svg testdata/visual/generated/*.png
+      - name: Upload inspectable SVG and PNG examples
+        uses: actions/upload-artifact@v7
+        with:
+          name: svg-visual-examples
+          path: testdata/visual/generated/
+          if-no-files-found: error
+          retention-days: 30
