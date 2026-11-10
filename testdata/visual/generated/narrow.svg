@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 780 359" width="780" height="359">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; }
+  </style>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="48" y="90" font-size="30.40" fill="#111111" xml:space="preserve">Narrow</text>
+  <text x="180" y="90" font-size="30.40" fill="#111111" xml:space="preserve"> </text>
+  <text x="191" y="90" font-size="30.40" fill="#111111" xml:space="preserve">layout</text>
+  <text x="48" y="126" font-size="16.00" fill="#111111" xml:space="preserve">A</text>
+  <text x="62" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="68" y="126" font-size="16.00" fill="#111111" xml:space="preserve">narrow</text>
+  <text x="133" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="139" y="126" font-size="16.00" fill="#111111" xml:space="preserve">page</text>
+  <text x="187" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="193" y="126" font-size="16.00" fill="#111111" xml:space="preserve">should</text>
+  <text x="258" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="264" y="126" font-size="16.00" fill="#111111" xml:space="preserve">wrap</text>
+  <text x="310" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="316" y="126" font-size="16.00" fill="#111111" xml:space="preserve">this</text>
+  <text x="350" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="356" y="126" font-size="16.00" fill="#111111" xml:space="preserve">deliberately</text>
+  <text x="469" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="475" y="126" font-size="16.00" fill="#111111" xml:space="preserve">long</text>
+  <text x="517" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="523" y="126" font-size="16.00" fill="#111111" xml:space="preserve">paragraph</text>
+  <text x="621" y="126" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="627" y="126" font-size="16.00" fill="#111111" xml:space="preserve">across</text>
+  <text x="48" y="148" font-size="16.00" fill="#111111" xml:space="preserve">multiple</text>
+  <text x="125" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="131" y="148" font-size="16.00" fill="#111111" xml:space="preserve">lines</text>
+  <text x="177" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="183" y="148" font-size="16.00" fill="#111111" xml:space="preserve">while</text>
+  <text x="233" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="239" y="148" font-size="16.00" fill="#111111" xml:space="preserve">keeping</text>
+  <text x="315" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="321" y="148" font-size="16.00" fill="#111111" xml:space="preserve">the</text>
+  <text x="351" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="357" y="148" font-size="16.00" fill="#111111" xml:space="preserve">baselines,</text>
+  <text x="457" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="463" y="148" font-size="16.00" fill="#111111" xml:space="preserve">margins,</text>
+  <text x="547" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="553" y="148" font-size="16.00" fill="#111111" xml:space="preserve">and</text>
+  <text x="589" y="148" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="595" y="148" font-size="16.00" fill="#111111" xml:space="preserve">heading</text>
+  <text x="48" y="170" font-size="16.00" fill="#111111" xml:space="preserve">positions</text>
+  <text x="134" y="170" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="140" y="170" font-size="16.00" fill="#111111" xml:space="preserve">consistent</text>
+  <text x="238" y="170" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="244" y="170" font-size="16.00" fill="#111111" xml:space="preserve">between</text>
+  <text x="325" y="170" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="331" y="170" font-size="16.00" fill="#111111" xml:space="preserve">raster</text>
+  <text x="386" y="170" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="392" y="170" font-size="16.00" fill="#111111" xml:space="preserve">and</text>
+  <text x="428" y="170" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="434" y="170" font-size="16.00" fill="#111111" xml:space="preserve">SVG.</text>
+  <text x="84" y="206" font-size="16.00" fill="#111111" xml:space="preserve">First</text>
+  <text x="126" y="206" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="132" y="206" font-size="16.00" fill="#111111" xml:space="preserve">item</text>
+  <text x="69" y="206" font-size="16.00" fill="#111111" xml:space="preserve">•</text>
+  <text x="84" y="237" font-size="16.00" fill="#111111" xml:space="preserve">Second</text>
+  <text x="157" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="163" y="237" font-size="16.00" fill="#111111" xml:space="preserve">item</text>
+  <text x="204" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="210" y="237" font-size="16.00" fill="#111111" xml:space="preserve">with</text>
+  <text x="248" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="254" y="237" font-size="16.00" fill="#111111" font-weight="bold" xml:space="preserve">bold</text>
+  <text x="299" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="305" y="237" font-size="16.00" fill="#111111" xml:space="preserve">and</text>
+  <text x="341" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="347" y="237" font-size="16.00" fill="#111111" font-style="italic" xml:space="preserve">italic</text>
+  <text x="392" y="237" font-size="16.00" fill="#111111" xml:space="preserve"> </text>
+  <text x="398" y="237" font-size="16.00" fill="#111111" xml:space="preserve">formatting</text>
+  <text x="69" y="237" font-size="16.00" fill="#111111" xml:space="preserve">•</text>
+  <rect x="48" y="258" width="684" height="47" fill="#f5f5f7"/>
+  <text x="58" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve">A</text>
+  <text x="70" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="82" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve">narrow</text>
+  <text x="154" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="166" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve">fixed-width</text>
+  <text x="298" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="310" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve">code</text>
+  <text x="358" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="370" y="283" font-size="15.20" fill="#111111" class="mono" xml:space="preserve">block</text>
+</svg>
