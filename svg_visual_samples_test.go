@@ -97,6 +97,20 @@ func TestSVGVisualSamples(t *testing.T) {
 			t.Logf("input=%s width=%d height=%d text=%d rect=%d line=%d image=%d svgBytes=%d svgSHA256=%x",
 				name, w, h, counts["text"], counts["rect"], counts["line"], counts["image"], len(svgData), hash)
 
+			// Check the actual reviewable SVG file, not just the XML structure.
+			// This catches stale sample previews when renderer metrics change.
+			if !*writeVisualSamples {
+				stem := strings.TrimSuffix(name, ".md")
+				expectedPath := filepath.Join("testdata", "visual", "generated", stem+".svg")
+				expected, err := os.ReadFile(expectedPath)
+				if err != nil {
+					t.Fatalf("read committed SVG sample %s: %v", expectedPath, err)
+				}
+				if !bytes.Equal(svgData, expected) {
+					t.Fatalf("committed SVG sample %s is stale; regenerate with -write-visual-samples", expectedPath)
+				}
+			}
+
 			if *writeVisualSamples {
 				dir := filepath.Join("testdata", "visual", "generated")
 				if err := os.MkdirAll(dir, 0o755); err != nil {
