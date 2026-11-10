@@ -26,7 +26,7 @@ func TestSVGVisualSamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	header := regexp.MustCompile("(?m)^-- ([a-z-]+\\.md) --\\r?\\n")
+	header := regexp.MustCompile(`(?m)^-- ([a-z-]+\.md) --\r?\n`)
 	matches := header.FindAllStringSubmatchIndex(string(data), -1)
 	if len(matches) < 2 {
 		t.Fatalf("expected multiple Markdown samples in txtar, got %d", len(matches))
