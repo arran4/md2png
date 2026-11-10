@@ -53,6 +53,7 @@ Requires Go 1.22 or newer.
 | `--margin` | Margin in pixels | 48 |
 | `--pt` | Base font size (points) | 16 |
 | `--theme` | `light` or `dark` | `light` |
+| `--theme-file` | Path to a custom CSS-lite theme file (takes precedence over `--theme`) | — |
 | `--font` | Regular font TTF path | built-in Go Regular |
 | `--fontbold` | Bold font TTF path | built-in Go Bold |
 | `--fontmono` | Monospace font TTF path | built-in Go Mono |
@@ -265,6 +266,82 @@ You can customize `md2png.ImagePolicy` with fine-grained controls:
 
 ---
 
+## Custom CSS-Lite Themes
+
+`md2png` supports custom theme files using a lightweight, CSS-inspired format (`v1` grammar). You can supply a custom theme file via the `--theme-file <path>` CLI flag or programmatic APIs (`md2png.LoadThemeFile`, `md2png.ParseTheme`). When `--theme-file` is specified, it takes precedence over `--theme`.
+
+### Example Theme File (`mytheme.theme`)
+
+```css
+/* Optional format version and inheritance */
+@version 1;
+@theme forest extends dark;
+
+document {
+  color: #edf7f1;
+  background: #0f1c15;
+}
+
+link {
+  color: #4ade80;
+}
+
+code-block {
+  background: #19342a;
+  color: #d1f0e2;
+}
+
+blockquote {
+  border-color: #2e5945;
+}
+
+hr {
+  border-color: #244234;
+}
+
+table {
+  border-color: #244234;
+  header-background: #19342a;
+}
+
+warning {
+  color: #ff9966;
+}
+
+syntax {
+  keyword: #4ade80;
+  string: #86efac;
+  comment: #4b7a60;
+  number: #a7f3d0;
+}
+```
+
+### Theme Syntax & Structure
+
+- **Directives**:
+  - `@version <N>;`: Optional explicit format version (`@version 1;`). If omitted, defaults to version 1. Unsupported version numbers fail with a clear validation error.
+  - `@theme <name> [extends <light|dark>];`: Names the theme and optionally inherits defaults from built-in `light` (default) or `dark`. Elements and properties not overridden retain their inherited base values.
+- **Semantic Selectors & Properties**:
+  - `document` (or `body`, `root`): `color` (text foreground), `background` (canvas background).
+  - `link` (or `a`): `color`.
+  - `code-block` (or `code`, `pre`): `background`, `color`.
+  - `blockquote` (or `quote`): `border-color` (vertical quote bar).
+  - `hr` (or `rule`, `thematic-break`): `color` / `border-color`.
+  - `table`: `border-color`, `header-background`.
+  - `warning` (or `error`): `color`.
+  - `syntax` (or `syntax-highlighting`): `keyword`, `string`, `comment`, `type`, `number`, `builtin`, `punctuation`.
+- **Supported Color Formats**:
+  - Hex: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`.
+  - RGB / RGBA: `rgb(r, g, b)`, `rgba(r, g, b, a)`, and modern CSS space/slash syntax `rgb(65 200 145 / 90%)`.
+  - HSL / HSLA: `hsl(h, s%, l%)`, `hsla(h, s%, l%, a)`.
+  - Keywords: `transparent`, `white`, `black`, `red`, `blue`, `green`, etc.
+- **Error Handling**:
+  - Syntax errors, unknown directives, unrecognized element selectors, invalid property names, and malformed colors report clear file, line, and column positions.
+- **Compatibility & Versioning Policy**:
+  - The format follows the documented v1 grammar. Future additive properties will remain backward-compatible; any breaking format change will require incrementing `@version`.
+
+---
+
 ## Output
 
 Light theme:
@@ -294,7 +371,7 @@ Everything happens in memory; there is no HTML renderer or external process.
 - [x] Inline images
 - [x] Syntax highlighting
 - [x] SVG output
-- [ ] Configurable themes via YAML/JSON
+- [x] Configurable themes via CSS-lite theme files
 
 ---
 

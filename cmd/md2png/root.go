@@ -79,6 +79,8 @@ type RootCmd struct {
 	margin              *int
 	pt                  *float64
 	theme               *string
+	themeFile           *string
+	transparent         *bool
 	fontRegular         *string
 	fontBold            *string
 	fontMono            *string
@@ -173,6 +175,21 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.Func("theme", "flag: Theme: light|dark", func(s string) error {
 		c.theme = &s
+		return nil
+	})
+
+	c.Func("theme-file", "flag: Path to CSS theme file", func(s string) error {
+		c.themeFile = &s
+		return nil
+	})
+
+	c.BoolFunc("transparent", "flag: Explicit transparent page background", func(s string) error {
+		parsed, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		val := parsed
+		c.transparent = &val
 		return nil
 	})
 
@@ -283,7 +300,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth)
+		err := cli.Md2png(c.in, c.out, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.format, c.strict, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth)
 		if err != nil {
 			var exitCode *cmd.ErrExitCode
 			if errors.As(err, &exitCode) {
@@ -505,6 +522,30 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				s := value
 				c.theme = &s
+
+			case "themeFile", "theme-file":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.themeFile = &s
+
+			case "transparent":
+				if hasValue {
+					b, err := strconv.ParseBool(value)
+					if err != nil {
+						return c.usageError(cmd.UsageInvalidValue, name, err, "invalid boolean value for flag %s: %s", name, value)
+					}
+					c.transparent = &b
+				} else {
+					b := true
+					c.transparent = &b
+				}
 
 			case "fontRegular", "font":
 				if !hasValue {

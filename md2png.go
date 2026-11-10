@@ -90,12 +90,17 @@ type SyntaxPalette struct {
 }
 
 type Theme struct {
-	BG       color.Color
-	FG       color.Color
-	CodeBG   color.Color
-	QuoteBar color.Color
-	HRule    color.Color
-	Syntax   SyntaxPalette
+	BG          color.Color
+	FG          color.Color
+	Link        color.Color
+	Warning     color.Color
+	CodeBG      color.Color
+	CodeFG      color.Color
+	QuoteBar    color.Color
+	HRule       color.Color
+	TableHeader color.Color
+	TableBorder color.Color
+	Syntax      SyntaxPalette
 }
 
 var (
@@ -103,7 +108,10 @@ var (
 	lightTheme = Theme{
 		BG:       color.RGBA{0xFF, 0xFF, 0xFF, 0xFF},
 		FG:       color.RGBA{0x11, 0x11, 0x11, 0xFF},
+		Link:     color.RGBA{0x06, 0x4F, 0xBD, 0xFF},
+		Warning:  color.RGBA{0xD9, 0x51, 0x2C, 0xFF},
 		CodeBG:   color.RGBA{0xF5, 0xF5, 0xF7, 0xFF},
+		CodeFG:   color.RGBA{0x11, 0x11, 0x11, 0xFF},
 		QuoteBar: color.RGBA{0xCC, 0xCC, 0xCC, 0xFF},
 		HRule:    color.RGBA{0xDD, 0xDD, 0xDD, 0xFF},
 		Syntax: SyntaxPalette{
@@ -120,7 +128,10 @@ var (
 	darkTheme = Theme{
 		BG:       color.RGBA{0x12, 0x12, 0x14, 0xFF},
 		FG:       color.RGBA{0xEE, 0xEE, 0xF0, 0xFF},
+		Link:     color.RGBA{0x58, 0xA6, 0xFF, 0xFF}, // High-contrast link for dark backgrounds
+		Warning:  color.RGBA{0xF0, 0x88, 0x3E, 0xFF},
 		CodeBG:   color.RGBA{0x1E, 0x1E, 0x22, 0xFF},
+		CodeFG:   color.RGBA{0xEE, 0xEE, 0xF0, 0xFF},
 		QuoteBar: color.RGBA{0x44, 0x44, 0x48, 0xFF},
 		HRule:    color.RGBA{0x33, 0x33, 0x36, 0xFF},
 		Syntax: SyntaxPalette{
@@ -134,7 +145,6 @@ var (
 		},
 	}
 	linkColor    = color.RGBA{0x06, 0x4F, 0xBD, 0xFF}
-	warningColor = color.RGBA{0xD9, 0x51, 0x2C, 0xFF}
 )
 
 // ---- Font loading ----
@@ -1641,12 +1651,12 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 		case *ast.Link:
 			dest := string(c.Destination)
 			linkStyle := st
-			linkStyle.color = linkColor
+			linkStyle.color = r.c.th.Link
 			linkStyle.underline = true
 			before := len(*out)
 			r.collectInlineTokensStyled(c, md, linkStyle, out)
 			for i := before; i < len(*out); i++ {
-				(*out)[i].color = linkColor
+				(*out)[i].color = r.c.th.Link
 				(*out)[i].underline = true
 			}
 			if r.linkFootnotes {
@@ -1664,7 +1674,7 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 					text:          label,
 					font:          effFont,
 					size:          st.size,
-					color:         linkColor,
+					color:         r.c.th.Link,
 					underline:     true,
 					strikethrough: st.strikethrough,
 				})
@@ -1717,7 +1727,7 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 				fallbackColor := r.c.th.FG
 				if fallback == "" {
 					fallback = rawDest
-					fallbackColor = warningColor
+					fallbackColor = r.c.th.Warning
 				}
 				if fallback != "" {
 					*out = append(*out, textToken{
@@ -3093,6 +3103,15 @@ var (
 )
 
 // ThemeByName returns a built-in theme by name ("light" or "dark").
+func isThemeDark(c color.Color) bool {
+	if c == nil {
+		return false
+	}
+	r, g, b, _ := c.RGBA()
+	lum := (0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)) / 65535.0
+	return lum < 0.5
+}
+
 func ThemeByName(name string) (Theme, error) {
 	switch strings.ToLower(name) {
 	case "light", "":
@@ -3183,8 +3202,9 @@ type RenderOptions struct {
 	TableFitWidth       bool              // Expand canvas width to fit tables
 	ImagePolicy         *ImagePolicy      // Policy for loading images. If nil, DefaultCLIImagePolicy is used.
 	DiagnosticPolicy    *DiagnosticPolicy // Policy for diagnostic behavior. If nil, defaults to best-effort.
-	DisableHighlighting bool              // Disable syntax highlighting
-	CodeTabWidth        int               // Tab width in code blocks. Default is 4.
+	DisableHighlighting   bool              // Disable syntax highlighting
+	CodeTabWidth          int               // Tab width in code blocks. Default is 4.
+	TransparentBackground bool              // Explicitly use a transparent background (overrides Theme.BG)
 }
 
 // DiagnosticSeverity indicates the severity of a rendering issue.
@@ -3295,6 +3315,23 @@ func normalizeRenderOptions(opts *RenderOptions) error {
 
 	if (opts.Theme == Theme{}) {
 		opts.Theme = lightTheme
+	}
+	if opts.TransparentBackground {
+		opts.Theme.BG = color.RGBA{0, 0, 0, 0}
+	}
+	if opts.Theme.Link == nil {
+		if isThemeDark(opts.Theme.BG) {
+			opts.Theme.Link = darkTheme.Link
+		} else {
+			opts.Theme.Link = lightTheme.Link
+		}
+	}
+	if opts.Theme.Warning == nil {
+		if isThemeDark(opts.Theme.BG) {
+			opts.Theme.Warning = darkTheme.Warning
+		} else {
+			opts.Theme.Warning = lightTheme.Warning
+		}
 	}
 	if opts.MaxHeight < 0 {
 		return ErrInvalidMaxHeight

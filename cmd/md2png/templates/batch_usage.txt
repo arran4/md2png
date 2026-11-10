@@ -14,7 +14,7 @@ Subcommands:
     {{formatFlagRow 30 20 "--margin *int" "" "Margin in pixels (0 for default)"}}
     {{formatFlagRow 30 20 "--pt *float64" "" "Base font size in points (paragraph) (0 for default)"}}
     {{formatFlagRow 30 20 "--theme *string" "(default: light)" "Theme: light|dark"}}
-    {{formatFlagRow 30 20 "--font-regular *string" "(default: light)" "Path to TTF for regular text (optional; default Go Regular)"}}
+    {{formatFlagRow 30 20 "--font-regular *string" "" "Path to TTF for regular text (optional; default Go Regular)"}}
     {{formatFlagRow 30 20 "--font-bold *string" "" "Path to TTF for bold text (optional; default Go Bold)"}}
     {{formatFlagRow 30 20 "--font-mono *string" "" "Path to TTF for mono/code (optional; default Go Mono)"}}
     {{formatFlagRow 30 20 "--font-italic *string" "" "Path to TTF for italic text (optional; default Go Italic)"}}
@@ -29,6 +29,8 @@ Subcommands:
     {{formatFlagRow 30 20 "--code-tab-width *int" "(default: 4)" "Tab width in code blocks"}}
     {{formatFlagRow 30 20 "--in *string" "(default: stdin)" "flag: Input Markdown file ( if empty)"}}
     {{formatFlagRow 30 20 "--out *string" "(default: out.png)" "flag: Output image file (.png, .jpg, or .gif)"}}
+    {{formatFlagRow 30 20 "--theme-file *string" "(default: light)" "flag: Path to CSS theme file"}}
+    {{formatFlagRow 30 20 "--transparent *bool" "" "flag: Explicit transparent page background"}}
 
 `batch` Flags:
     {{formatFlagRow 30 20 "--out-dir, -o *string" "(default: dist)" "Output directory for rendered images"}}
