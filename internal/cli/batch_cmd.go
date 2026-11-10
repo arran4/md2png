@@ -143,7 +143,9 @@ func RunBatch(
 	isDryRun := dryRun != nil && *dryRun
 	if isDryRun {
 		for _, task := range tasks {
-			fmt.Fprintf(stdout, "%s -> %s\n", task.InputPath, task.OutputPath)
+			if _, err := fmt.Fprintf(stdout, "%s -> %s\n", task.InputPath, task.OutputPath); err != nil {
+				return fmt.Errorf("md2png batch: write dry-run output: %w", err)
+			}
 		}
 		return nil
 	}
@@ -213,9 +215,13 @@ func RunBatch(
 	wg.Wait()
 
 	if len(taskErrors) > 0 {
-		fmt.Fprintf(stderr, "md2png batch: %d of %d files failed\n", len(taskErrors), len(tasks))
+		if _, err := fmt.Fprintf(stderr, "md2png batch: %d of %d files failed\n", len(taskErrors), len(tasks)); err != nil {
+			return fmt.Errorf("md2png batch: write failure report: %w", err)
+		}
 		for _, e := range taskErrors {
-			fmt.Fprintf(stderr, "  - %s\n", e)
+			if _, err := fmt.Fprintf(stderr, "  - %s\n", e); err != nil {
+				return fmt.Errorf("md2png batch: write failure detail: %w", err)
+			}
 		}
 		return fmt.Errorf("md2png batch: %d render failure(s)", len(taskErrors))
 	}
