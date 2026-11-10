@@ -323,7 +323,7 @@ func TestRunMd2png_InjectedStreams(t *testing.T) {
 	stdin := strings.NewReader("# Injected Stdin test\n")
 	var stdout, stderr bytes.Buffer
 	outArg := "-"
-	err := RunMd2png(stdin, &stdout, &stderr, nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil, nil, nil, nil)
+	err := RunMd2png(stdin, &stdout, &stderr, nil, &outArg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("png"), nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RunMd2png() error = %v", err)
 	}
