@@ -37,6 +37,9 @@ func TestResolveFormat(t *testing.T) {
 		{"file with jpg format jpeg flag", "out.jpg", ptr("jpeg"), "jpeg", false},
 		{"file with jpg alias", "out.jpg", ptr("jpg"), "jpeg", false},
 		{"format matching is case insensitive", "out.PNG", ptr("PNG"), "png", false},
+		{"file with svg extension", "out.svg", nil, "svg", false},
+		{"file with svg flag", "out.svg", ptr("svg"), "svg", false},
+		{"stdout with svg", "-", ptr("svg"), "svg", false},
 	}
 
 	for _, tc := range tests {
@@ -115,6 +118,20 @@ func TestMd2png_Integration(t *testing.T) {
 				}
 				if len(g.Image) != 1 {
 					t.Errorf("expected exactly 1 frame in GIF, got %d", len(g.Image))
+				}
+			},
+		},
+		{
+			name:    "svg output",
+			outName: "out.svg",
+			wantErr: false,
+			check: func(t *testing.T, outPath string) {
+				data, err := os.ReadFile(outPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.HasPrefix(string(data), "<?xml") || !strings.Contains(string(data), "<svg") {
+					t.Errorf("expected valid SVG header and tag in output, got: %s", string(data[:100]))
 				}
 			},
 		},
