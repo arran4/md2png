@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +34,7 @@ import (
 	extensionAST "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
@@ -740,6 +743,19 @@ func (c *canvas) drawCodeBlock(spans [][]codeSpan, left, right int, size float64
 	c.cursorY = top + height + 6
 }
 
+func scaleImage(img image.Image, targetWidth, targetHeight int) image.Image {
+	if img == nil || targetWidth <= 0 || targetHeight <= 0 {
+		return img
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() == targetWidth && bounds.Dy() == targetHeight {
+		return img
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, xdraw.Over, nil)
+	return dst
+}
+
 func scaleImageToWidth(img image.Image, maxWidth int) image.Image {
 	if img == nil {
 		return nil
@@ -756,9 +772,223 @@ func scaleImageToWidth(img image.Image, maxWidth int) image.Image {
 	if height <= 0 {
 		height = 1
 	}
-	dst := image.NewRGBA(image.Rect(0, 0, maxWidth, height))
-	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, xdraw.Over, nil)
-	return dst
+	return scaleImage(img, maxWidth, height)
+}
+
+func computeImageDimensions(origW, origH int, reqW, reqH int, hasW, hasH bool, allowUpscale bool, maxAllowedW int, policy ImagePolicy) (int, int) {
+	if origW <= 0 || origH <= 0 {
+		return origW, origH
+	}
+
+	targetW := origW
+	targetH := origH
+
+	if hasW && hasH {
+		targetW = reqW
+		targetH = reqH
+	} else if hasW {
+		targetW = reqW
+		targetH = int(math.Round(float64(origH) * float64(targetW) / float64(origW)))
+		if targetH < 1 {
+			targetH = 1
+		}
+	} else if hasH {
+		targetH = reqH
+		targetW = int(math.Round(float64(origW) * float64(targetH) / float64(origH)))
+		if targetW < 1 {
+			targetW = 1
+		}
+	}
+
+	// Never upscale by default unless explicitly requested:
+	if !allowUpscale {
+		if !hasW && !hasH {
+			if targetW > origW {
+				targetW = origW
+			}
+			if targetH > origH {
+				targetH = origH
+			}
+		}
+	}
+
+	// Clamp to available content width:
+	if maxAllowedW > 0 && targetW > maxAllowedW {
+		scale := float64(maxAllowedW) / float64(targetW)
+		targetW = maxAllowedW
+		targetH = int(math.Round(float64(targetH) * scale))
+		if targetH < 1 {
+			targetH = 1
+		}
+	}
+
+	// Clamp to ImagePolicy limits:
+	if policy.MaxImageWidth > 0 && targetW > policy.MaxImageWidth {
+		scale := float64(policy.MaxImageWidth) / float64(targetW)
+		targetW = policy.MaxImageWidth
+		targetH = int(math.Round(float64(targetH) * scale))
+		if targetH < 1 {
+			targetH = 1
+		}
+	}
+	if policy.MaxImageHeight > 0 && targetH > policy.MaxImageHeight {
+		scale := float64(policy.MaxImageHeight) / float64(targetH)
+		targetH = policy.MaxImageHeight
+		targetW = int(math.Round(float64(targetW) * scale))
+		if targetW < 1 {
+			targetW = 1
+		}
+	}
+	if policy.MaxImagePixels > 0 && targetW > 0 && targetH > 0 {
+		maxPix := int64(policy.MaxImagePixels)
+		if int64(targetW)*int64(targetH) > maxPix {
+			scale := math.Sqrt(float64(maxPix) / float64(int64(targetW)*int64(targetH)))
+			targetW = int(float64(targetW) * scale)
+			targetH = int(float64(targetH) * scale)
+			if targetW < 1 {
+				targetW = 1
+			}
+			if targetH < 1 {
+				targetH = 1
+			}
+		}
+	}
+
+	return targetW, targetH
+}
+
+type imageAttributeTransformer struct{}
+
+var imageKVRegex = regexp.MustCompile(`([a-zA-Z0-9_.-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s}]+)))?`)
+
+func isImageAttrKey(k string) bool {
+	switch k {
+	case "width", "w", "height", "h", "align", "upscale", "allow-upscale", "left", "center", "right":
+		return true
+	}
+	if strings.HasPrefix(k, ".") {
+		cls := strings.TrimPrefix(k, ".")
+		switch cls {
+		case "left", "center", "right", "align-left", "align-center", "align-right":
+			return true
+		}
+	}
+	return false
+}
+
+func (t *imageAttributeTransformer) Transform(node *ast.Document, reader text.Reader, pc parser.Context) {
+	source := reader.Source()
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		img, ok := n.(*ast.Image)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+
+		next := img.NextSibling()
+		if next == nil {
+			return ast.WalkContinue, nil
+		}
+		firstText, ok := next.(*ast.Text)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+
+		firstVal := string(firstText.Segment.Value(source))
+		trimmedFirst := strings.TrimLeft(firstVal, " \t")
+		if !strings.HasPrefix(trimmedFirst, "{") {
+			return ast.WalkContinue, nil
+		}
+
+		// Gather text across consecutive Text nodes until '}'
+		var combined strings.Builder
+		var textNodes []*ast.Text
+		cur := next
+		foundEnd := false
+		for cur != nil {
+			tn, ok := cur.(*ast.Text)
+			if !ok {
+				break
+			}
+			textNodes = append(textNodes, tn)
+			v := string(tn.Segment.Value(source))
+			combined.WriteString(v)
+			if strings.Contains(v, "}") {
+				foundEnd = true
+				break
+			}
+			cur = cur.NextSibling()
+		}
+
+		if !foundEnd {
+			return ast.WalkContinue, nil
+		}
+
+		fullStr := combined.String()
+		openIdx := strings.Index(fullStr, "{")
+		closeIdx := strings.Index(fullStr, "}")
+		if openIdx >= closeIdx {
+			return ast.WalkContinue, nil
+		}
+
+		rawAttrs := fullStr[openIdx+1 : closeIdx]
+		tailStr := fullStr[closeIdx+1:]
+
+		matches := imageKVRegex.FindAllStringSubmatch(rawAttrs, -1)
+		hasKnownAttr := false
+		for _, m := range matches {
+			k := strings.ToLower(m[1])
+			if isImageAttrKey(k) {
+				hasKnownAttr = true
+				break
+			}
+		}
+		if !hasKnownAttr {
+			return ast.WalkContinue, nil
+		}
+
+		for _, m := range matches {
+			key := strings.ToLower(m[1])
+			val := m[2]
+			if val == "" {
+				val = m[3]
+			}
+			if val == "" {
+				val = m[4]
+			}
+			if val == "" {
+				if key == "center" || key == "left" || key == "right" {
+					img.SetAttributeString("align", key)
+					continue
+				}
+				if strings.HasPrefix(key, ".") {
+					cls := strings.TrimPrefix(key, ".")
+					if cls == "center" || cls == "left" || cls == "right" {
+						img.SetAttributeString("align", cls)
+					} else if strings.HasPrefix(cls, "align-") {
+						img.SetAttributeString("align", strings.TrimPrefix(cls, "align-"))
+					}
+					continue
+				}
+			}
+			img.SetAttributeString(key, val)
+		}
+
+		parent := firstText.Parent()
+		for i := 0; i < len(textNodes)-1; i++ {
+			parent.RemoveChild(parent, textNodes[i])
+		}
+		lastNode := textNodes[len(textNodes)-1]
+		if strings.TrimSpace(tailStr) == "" {
+			parent.RemoveChild(parent, lastNode)
+		} else {
+			lastNode.Segment = text.NewSegment(lastNode.Segment.Stop-len(tailStr), lastNode.Segment.Stop)
+		}
+
+		return ast.WalkContinue, nil
+	})
 }
 
 // ---- Markdown -> draw ----
@@ -809,7 +1039,76 @@ type textToken struct {
 	isChecked      bool
 	newline        bool
 	image          image.Image
+	imgAlign       string
 	center         bool
+}
+
+func (r *renderer) resolveImageDimensionsAndAlignment(imgNode *ast.Image, img image.Image) (int, int, string) {
+	bounds := img.Bounds()
+	origW := bounds.Dx()
+	origH := bounds.Dy()
+
+	attrs := make(map[string]string)
+	if imgNode != nil {
+		for _, attr := range imgNode.Attributes() {
+			attrs[strings.ToLower(string(attr.Name))] = fmt.Sprint(attr.Value)
+		}
+	}
+
+	align := ""
+	if a, ok := attrs["align"]; ok {
+		align = strings.ToLower(strings.TrimSpace(a))
+	}
+	for _, k := range []string{"left", "center", "right"} {
+		if _, ok := attrs[k]; ok {
+			align = k
+		}
+	}
+
+	allowUpscale := false
+	if u, ok := attrs["upscale"]; ok {
+		allowUpscale = (u == "true" || u == "1" || u == "")
+	}
+	if u, ok := attrs["allow-upscale"]; ok {
+		allowUpscale = (u == "true" || u == "1" || u == "")
+	}
+
+	parseDim := func(keys ...string) (int, bool) {
+		for _, k := range keys {
+			val, ok := attrs[k]
+			if !ok {
+				continue
+			}
+			val = strings.TrimSpace(strings.ToLower(val))
+			if strings.HasSuffix(val, "%") {
+				pctStr := strings.TrimSuffix(val, "%")
+				if pct, err := strconv.ParseFloat(pctStr, 64); err == nil && pct > 0 {
+					availW := r.c.w - 2*r.c.margin
+					if availW <= 0 {
+						availW = r.c.w
+					}
+					dim := int(math.Round(float64(availW) * pct / 100.0))
+					return dim, true
+				}
+			}
+			val = strings.TrimSuffix(val, "px")
+			if d, err := strconv.Atoi(val); err == nil && d > 0 {
+				return d, true
+			}
+		}
+		return 0, false
+	}
+
+	reqW, hasW := parseDim("width", "w")
+	reqH, hasH := parseDim("height", "h")
+
+	availContentW := r.c.w - 2*r.c.margin
+	if availContentW <= 0 {
+		availContentW = r.c.w
+	}
+
+	targetW, targetH := computeImageDimensions(origW, origH, reqW, reqH, hasW, hasH, allowUpscale, availContentW, r.imagePolicy)
+	return targetW, targetH, align
 }
 
 func (r *renderer) ensureFootnote(raw string) int {
@@ -1375,19 +1674,25 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Image:
-			dest := strings.TrimSpace(string(c.Destination))
+			rawDest := strings.TrimSpace(string(c.Destination))
 			alt := strings.TrimSpace(getNodeText(c, md))
 			if alt == "" {
 				alt = strings.TrimSpace(string(c.Title))
 			}
-			if img, err := r.loadImage(dest); err == nil {
-				*out = append(*out, textToken{image: img, center: true})
+			if img, err := r.loadImage(rawDest); err == nil {
+				targetW, targetH, imgAlign := r.resolveImageDimensionsAndAlignment(c, img)
+				scaledImg := scaleImage(img, targetW, targetH)
+				*out = append(*out, textToken{
+					image:    scaledImg,
+					imgAlign: imgAlign,
+					center:   imgAlign == "center" || imgAlign == "",
+				})
 			} else {
 				diag := Diagnostic{
 					Code:        DiagImageLoadFailed,
 					Severity:    SeverityWarning,
 					NodeType:    "Image",
-					Destination: dest,
+					Destination: rawDest,
 					// Goldmark's Image node has no reliable source segment. -1 means
 					// unavailable; zero remains a valid source byte offset.
 					Offset:  -1,
@@ -1411,7 +1716,7 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 				fallback := alt
 				fallbackColor := r.c.th.FG
 				if fallback == "" {
-					fallback = dest
+					fallback = rawDest
 					fallbackColor = warningColor
 				}
 				if fallback != "" {
@@ -1425,7 +1730,7 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 				}
 			}
 			if r.imageFootnotes {
-				idx := r.ensureFootnote(dest)
+				idx := r.ensureFootnote(rawDest)
 				r.appendFootnoteMarker(out, st.size, idx)
 			}
 		case *ast.Paragraph:
@@ -1728,11 +2033,31 @@ func (c *canvas) drawTokens(tokens []textToken, left, right int, align extension
 			startY := c.cursorY
 			drawWidth := bounds.Dx()
 			drawHeight := bounds.Dy()
+			effectiveAlign := tok.imgAlign
+			if effectiveAlign == "" {
+				if align == extensionAST.AlignCenter || tok.center {
+					effectiveAlign = "center"
+				} else if align == extensionAST.AlignRight {
+					effectiveAlign = "right"
+				} else if align == extensionAST.AlignLeft {
+					effectiveAlign = "left"
+				} else {
+					effectiveAlign = "center"
+				}
+			}
+
 			x := left
-			if (tok.center || align == extensionAST.AlignCenter) && maxWidthInt > drawWidth {
-				x = left + (maxWidthInt-drawWidth)/2
-			} else if align == extensionAST.AlignRight && maxWidthInt > drawWidth {
-				x = left + maxWidthInt - drawWidth
+			switch effectiveAlign {
+			case "left":
+				x = left
+			case "right":
+				if maxWidthInt > drawWidth {
+					x = left + maxWidthInt - drawWidth
+				}
+			case "center":
+				if maxWidthInt > drawWidth {
+					x = left + (maxWidthInt-drawWidth)/2
+				}
 			}
 
 			c.ensureHeightAbs(startY + drawHeight + int(c.ptSize*0.6))
@@ -3088,7 +3413,12 @@ func LayoutDocument(data []byte, opts RenderOptions) (res LayoutResult, resErr e
 
 	mdParser := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+		goldmark.WithParserOptions(
+			parser.WithAutoHeadingID(),
+			parser.WithASTTransformers(
+				util.Prioritized(&imageAttributeTransformer{}, 100),
+			),
+		),
 	)
 	doc := mdParser.Parser().Parse(text.NewReader(data))
 

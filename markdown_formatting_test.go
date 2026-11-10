@@ -2,6 +2,7 @@ package md2png_test
 
 import (
 	"image/color"
+	"os"
 	"testing"
 
 	"github.com/arran4/md2png"
@@ -173,5 +174,22 @@ func TestStrikethrough_PixelDecoration(t *testing.T) {
 	}
 	if nonWhitePixels == 0 {
 		t.Fatal("expected strikethrough text to render pixels, found none")
+	}
+}
+
+func TestFormatting_ShowcaseFixture(t *testing.T) {
+	md, err := os.ReadFile("testdata/gfm_formatting_showcase.md")
+	if err != nil {
+		t.Fatalf("failed to read showcase fixture: %v", err)
+	}
+
+	img, err := md2png.Render(md, md2png.RenderOptions{
+		Width: 1024,
+	})
+	if err != nil {
+		t.Fatalf("failed to render showcase: %v", err)
+	}
+	if img == nil || img.Bounds().Dy() == 0 {
+		t.Fatal("expected non-empty image for showcase")
 	}
 }
