@@ -1,6 +1,7 @@
 package md2png
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -232,5 +233,37 @@ func TestAuthoredFootnotes_InvalidFootnoteOrder(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid FootnoteOrder") {
 		t.Fatalf("expected invalid FootnoteOrder error, got: %v", err)
+	}
+}
+
+func TestAuthoredFootnotes_Coexistence_GoldenFixture(t *testing.T) {
+	content, err := os.ReadFile("testdata/authored_footnotes_coexistence.md")
+	if err != nil {
+		t.Fatalf("failed to read test fixture: %v", err)
+	}
+
+	yes := true
+	imgAuthoredFirst, err := Render(content, RenderOptions{
+		Width:         800,
+		LinkFootnotes: &yes,
+		FootnoteOrder: FootnoteOrderAuthoredFirst,
+	})
+	if err != nil {
+		t.Fatalf("failed to render authored-first: %v", err)
+	}
+	if imgAuthoredFirst == nil || imgAuthoredFirst.Bounds().Dy() == 0 {
+		t.Fatalf("expected non-empty image for authored-first")
+	}
+
+	imgLinksFirst, err := Render(content, RenderOptions{
+		Width:         800,
+		LinkFootnotes: &yes,
+		FootnoteOrder: FootnoteOrderLinksFirst,
+	})
+	if err != nil {
+		t.Fatalf("failed to render links-first: %v", err)
+	}
+	if imgLinksFirst == nil || imgLinksFirst.Bounds().Dy() == 0 {
+		t.Fatalf("expected non-empty image for links-first")
 	}
 }
