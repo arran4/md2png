@@ -33,6 +33,35 @@ func Md2png(
 	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
 	footnoteOrder *string, // flag: --footnote-order Footnote ordering: authored-first|links-first (default: "authored-first")
 ) error {
+	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth)
+}
+
+// RunMd2png executes the md2png CLI command with explicit I/O streams.
+func RunMd2png(
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+	in *string,
+	out *string,
+	width *int,
+	margin *int,
+	pt *float64,
+	theme *string,
+	fontRegular *string,
+	fontBold *string,
+	fontMono *string,
+	fontItalic *string,
+	fontBoldItalic *string,
+	fontFallback *string,
+	footnoteLinks *bool,
+	footnoteImages *bool,
+	maxHeight *int,
+	format *string,
+	strict *bool,
+	tableFitWidth *bool,
+	disableHighlighting *bool,
+	codeTabWidth *int,
+) error {
 	var data []byte
 	var baseDir string
 	var err error
@@ -52,7 +81,7 @@ func Md2png(
 	}
 
 	if inPath == "" {
-		data, err = io.ReadAll(os.Stdin)
+		data, err = io.ReadAll(stdin)
 		if err == nil {
 			baseDir, err = os.Getwd()
 		}
@@ -87,7 +116,7 @@ func Md2png(
 
 	if len(res.Diagnostics) > 0 {
 		for _, diag := range res.Diagnostics {
-			fmt.Fprintf(os.Stderr, "md2png: %s\n", diag.String())
+			_, _ = fmt.Fprintf(stderr, "md2png: %s\n", diag.String())
 		}
 	}
 
@@ -98,7 +127,7 @@ func Md2png(
 	img := res.Image
 
 	if outPath == "-" {
-		return encodeImage(os.Stdout, img, resolvedFormat)
+		return encodeImage(stdout, img, resolvedFormat)
 	}
 
 	return encodeToFile(outPath, img, resolvedFormat)
