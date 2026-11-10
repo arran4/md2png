@@ -260,11 +260,7 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
-	c.Func("footnote-order", "flag: Footnote ordering: authored|links", func(s string) error {
-		c.footnoteOrder = &s
-		return nil
-	})
-	c.Func("first", "flag: Footnote ordering: authored|links", func(s string) error {
+	c.Func("footnote-order", "flag: Ordering of authored vs link footnotes", func(s string) error {
 		c.footnoteOrder = &s
 		return nil
 	})
@@ -585,7 +581,7 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				val := v
 				c.codeTabWidth = &val
 
-			case "footnoteOrder", "footnote-order", "first":
+			case "footnoteOrder", "footnote-order":
 				if !hasValue {
 					if i+1 < len(args) {
 						value = args[i+1]
