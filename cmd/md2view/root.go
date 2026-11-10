@@ -92,6 +92,7 @@ type RootCmd struct {
 	tableFitWidth       *bool
 	disableHighlighting *bool
 	codeTabWidth        *int
+	footnoteOrder       *string
 	args                []string
 	CommandAction       func(c *RootCmd) error
 }
@@ -276,9 +277,14 @@ func NewRoot(name, version, commit, date string) (*RootCmd, error) {
 		return nil
 	})
 
+	c.Func("footnote-order", "flag: Ordering of authored vs link footnotes", func(s string) error {
+		c.footnoteOrder = &s
+		return nil
+	})
+
 	c.CommandAction = func(c *RootCmd) error {
 
-		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.args...)
+		err := cli.Md2view(c.in, c.width, c.margin, c.pt, c.theme, c.themeFile, c.transparent, c.fontRegular, c.fontBold, c.fontMono, c.fontItalic, c.fontBoldItalic, c.fontFallback, c.footnoteLinks, c.footnoteImages, c.maxHeight, c.tableFitWidth, c.disableHighlighting, c.codeTabWidth, c.footnoteOrder, c.args...)
 		if err != nil {
 			var exitCode *cmd.ErrExitCode
 			if errors.As(err, &exitCode) {
@@ -615,6 +621,18 @@ func (c *RootCmd) Execute(args []string) (err error) {
 				}
 				val := v
 				c.codeTabWidth = &val
+
+			case "footnoteOrder", "footnote-order":
+				if !hasValue {
+					if i+1 < len(args) {
+						value = args[i+1]
+						i++
+					} else {
+						return c.usageError(cmd.UsageMissingFlagValue, name, nil, "flag %s requires a value", name)
+					}
+				}
+				s := value
+				c.footnoteOrder = &s
 			default:
 				return c.usageError(cmd.UsageUnknownFlag, name, nil, "unknown flag: --%s", name)
 			}

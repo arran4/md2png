@@ -59,6 +59,7 @@ Requires Go 1.22 or newer.
 | `--fontmono` | Monospace font TTF path | built-in Go Mono |
 | `--footnote-links` | Emit link targets as numbered footnotes | `true` |
 | `--footnote-images` | Emit image targets as numbered footnotes | `false` |
+| `--footnote-order` | Footnote ordering when authored and link notes coexist: `authored-first`, `links-first` | `authored-first` |
 | `--max-height` | Maximum output height in pixels (0 for default) | 32768 |
 | `--table-fit-width` | Expand canvas width to fit tables | `false` |
 | `--strict` | Fail when rendering emits a warning diagnostic | `false` |

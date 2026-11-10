@@ -57,6 +57,8 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "--disable-highlighting")
 	args = append(args, "--code-tab-width")
 	args = append(args, "1")
+	args = append(args, "--footnote-order")
+	args = append(args, "test")
 
 	err = cmd.Execute(args)
 	if err != nil {
@@ -175,6 +177,11 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected codeTabWidth to be non-nil")
 	} else if *cmd.codeTabWidth != 1 {
 		t.Errorf("Expected codeTabWidth to be 1, got '%v'", *cmd.codeTabWidth)
+	}
+	if cmd.footnoteOrder == nil {
+		t.Errorf("Expected footnoteOrder to be non-nil")
+	} else if *cmd.footnoteOrder != "test" {
+		t.Errorf("Expected footnoteOrder to be 'test', got '%v'", *cmd.footnoteOrder)
 	}
 
 }

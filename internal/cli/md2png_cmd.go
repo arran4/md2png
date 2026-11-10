@@ -33,8 +33,9 @@ func Md2png(
 	tableFitWidth *bool, // flag: --table-fit-width Expand canvas width to fit tables
 	disableHighlighting *bool, // flag: --disable-highlighting Disable syntax highlighting
 	codeTabWidth *int, // flag: --code-tab-width Tab width in code blocks (default: 4)
+	footnoteOrder *string, // flag: --footnote-order Ordering of authored vs link footnotes
 ) error {
-	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth, themeFile, transparent)
+	return RunMd2png(os.Stdin, os.Stdout, os.Stderr, in, out, width, margin, pt, theme, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, format, strict, tableFitWidth, disableHighlighting, codeTabWidth, themeFile, transparent, footnoteOrder)
 }
 
 // RunMd2png executes the md2png CLI command with explicit I/O streams.
@@ -64,6 +65,7 @@ func RunMd2png(
 	codeTabWidth *int,
 	themeFile *string,
 	transparent *bool,
+	footnoteOrder *string,
 ) error {
 	var data []byte
 	var baseDir string
@@ -108,6 +110,7 @@ func RunMd2png(
 		strict, width, margin, pt, theme, themeFile, transparent,
 		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
 		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
+		footnoteOrder,
 		baseDir,
 	)
 	if err != nil {

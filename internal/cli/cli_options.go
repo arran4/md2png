@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/arran4/md2png"
@@ -28,6 +29,7 @@ func ConvertCommandArgsToRenderOptions(
 	tableFitWidth *bool,
 	disableHighlighting *bool,
 	codeTabWidth *int,
+	footnoteOrder *string,
 	baseDir string,
 ) (md2png.RenderOptions, error) {
 	var th md2png.Theme
@@ -138,6 +140,17 @@ func ConvertCommandArgsToRenderOptions(
 		opts.CodeTabWidth = *codeTabWidth
 	} else {
 		opts.CodeTabWidth = 4
+	}
+
+	if footnoteOrder != nil && *footnoteOrder != "" {
+		switch strings.ToLower(*footnoteOrder) {
+		case "authored-first", "authored":
+			opts.FootnoteOrder = md2png.FootnoteOrderAuthoredFirst
+		case "links-first", "urls-first", "links":
+			opts.FootnoteOrder = md2png.FootnoteOrderLinksFirst
+		default:
+			return opts, fmt.Errorf("unknown footnote order %q, expected 'authored-first' or 'links-first'", *footnoteOrder)
+		}
 	}
 
 	return opts, nil
