@@ -2,55 +2,15 @@
 
 package main
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/arran4/md2png/cmd"
-)
-
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
+import "os"
 
 // Provenance
 var (
-	GeneratorVersion = "v0.0.30-0.20260909021348-caa7cff8ac3c"
+	GeneratorVersion = "v0.0.32"
 	GeneratedAt      = ""
 	ProjectCommit    = ""
 )
 
 func main() {
-	root, err := NewRoot("md2png", version, commit, date)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Narrow workaround for issue #112: dispatch `version` early to prevent
-	// the generated `Execute` from running `CommandAction` first, which has unwanted
-	// side effects (e.g. attempting to convert files in md2png or popping UI in md2view).
-	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "version" {
-		if verCmd, ok := root.Commands["version"]; ok {
-			if err := verCmd().Execute(args[1:]); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-	}
-
-	if err := root.Execute(args); err != nil {
-		if e, ok := err.(*cmd.ErrExitCode); ok {
-			if e.Err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", e.Err)
-			}
-			os.Exit(e.Code)
-		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	os.Exit(generatedRun(os.Args[1:], os.Stderr))
 }

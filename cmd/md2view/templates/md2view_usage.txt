@@ -4,28 +4,28 @@ Usage: md2view [flags...] [args...]
 md2view that provides a GUI viewer for Markdown
 
 Subcommands:
-    help         Print this help message
-    usage        Print this usage message
+    {{formatHelpRow 5 "help" "Print this help message"}}
+    {{formatHelpRow 5 "usage" "Print this usage message"}}
 
 
 Flags:
-    --in *string                   (default: stdin)   flag: Input Markdown file ( if empty)
-    --width *int                   (default: stdin)   flag: Output image width in pixels (0 for default)
-    --margin *int                                     flag: Margin in pixels (0 for default)
-    --pt *float64                                     flag: Base font size in points (paragraph) (0 for default)
-    --theme *string                (default: light)   flag: Theme: light|dark
-    --font *string                 (default: light)   flag: Path to TTF for regular text (optional; default Go Regular)
-    --fontbold *string                                flag: Path to TTF for bold text (optional; default Go Bold)
-    --fontmono *string                                flag: Path to TTF for mono/code (optional; default Go Mono)
-    --fontitalic *string                              flag: Path to TTF for italic text (optional; default Go Italic)
-    --fontbolditalic *string                          flag: Path to TTF for bold italic text (optional; default Go Bold Italic)
-    --font-fallback *string                           flag: Comma separated paths to fallback TTF/OTF fonts
-    --footnote-links *bool         (default: true)    flag: Add footnotes for link destinations
-    --footnote-images *bool        (default: false)   flag: Add footnotes for image destinations
-    --max-height *int              (default: false)   flag: Maximum output height in pixels (0 for default)
-    --table-fit-width *bool                           flag: Expand canvas width to fit tables
-    --disable-highlighting *bool                      flag: Disable syntax highlighting
-    --code-tab-width *int          (default: 4)       flag: Tab width in code blocks
+    {{formatFlagRow 30 18 "--in *string" "(default: stdin)" "flag: Input Markdown file ( if empty)"}}
+    {{formatFlagRow 30 18 "--width *int" "(default: stdin)" "flag: Output image width in pixels (0 for default)"}}
+    {{formatFlagRow 30 18 "--margin *int" "" "flag: Margin in pixels (0 for default)"}}
+    {{formatFlagRow 30 18 "--pt *float64" "" "flag: Base font size in points (paragraph) (0 for default)"}}
+    {{formatFlagRow 30 18 "--theme *string" "(default: light)" "flag: Theme: light|dark"}}
+    {{formatFlagRow 30 18 "--font *string" "(default: light)" "flag: Path to TTF for regular text (optional; default Go Regular)"}}
+    {{formatFlagRow 30 18 "--fontbold *string" "" "flag: Path to TTF for bold text (optional; default Go Bold)"}}
+    {{formatFlagRow 30 18 "--fontmono *string" "" "flag: Path to TTF for mono/code (optional; default Go Mono)"}}
+    {{formatFlagRow 30 18 "--fontitalic *string" "" "flag: Path to TTF for italic text (optional; default Go Italic)"}}
+    {{formatFlagRow 30 18 "--fontbolditalic *string" "" "flag: Path to TTF for bold italic text (optional; default Go Bold Italic)"}}
+    {{formatFlagRow 30 18 "--font-fallback *string" "" "flag: Comma separated paths to fallback TTF/OTF fonts"}}
+    {{formatFlagRow 30 18 "--footnote-links *bool" "(default: true)" "flag: Add footnotes for link destinations"}}
+    {{formatFlagRow 30 18 "--footnote-images *bool" "(default: false)" "flag: Add footnotes for image destinations"}}
+    {{formatFlagRow 30 18 "--max-height *int" "(default: false)" "flag: Maximum output height in pixels (0 for default)"}}
+    {{formatFlagRow 30 18 "--table-fit-width *bool" "" "flag: Expand canvas width to fit tables"}}
+    {{formatFlagRow 30 18 "--disable-highlighting *bool" "" "flag: Disable syntax highlighting"}}
+    {{formatFlagRow 30 18 "--code-tab-width *int" "(default: 4)" "flag: Tab width in code blocks"}}
 
 Positional Arguments:
-    [args...]  arg: [args]
+    {{formatHelpRow 9 "[args...]" "arg: [args]"}}
