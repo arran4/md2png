@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/arran4/md2png"
@@ -11,7 +13,7 @@ func ptrFloat64(v float64) *float64 { return &v }
 func ptrString(s string) *string    { return &s }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -33,7 +35,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 		t.Fatalf("expected image, got nil")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -49,7 +51,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 
 func TestCLIDisableHighlighting(t *testing.T) {
 	// Default absent behavior
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping true
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -67,7 +69,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping false
-	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
+	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
 	if err3 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
 	}
@@ -77,7 +79,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 }
 
 func TestCLITableFitWidthEquivalence(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -85,7 +87,7 @@ func TestCLITableFitWidthEquivalence(t *testing.T) {
 		t.Errorf("expected TableFitWidth to be true")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, nil, "")
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -109,7 +111,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
+	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
 	if errCLI != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", errCLI)
 	}
@@ -120,7 +122,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 	}
 
 	if resLibrary.Image.Bounds().Dx() != resCLI.Image.Bounds().Dx() {
-		t.Fatalf("Library width %d did not match CLI width %d", resLibrary.Image.Bounds().Dx(), resCLI.Image.Bounds().Dx())
+		t.Fatalf("CLI output width %d did not match Library render width %d", resLibrary.Image.Bounds().Dx(), resCLI.Image.Bounds().Dx())
 	}
 }
 
@@ -138,7 +140,7 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, nil, "")
+			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, nil, "")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -149,8 +151,48 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 	}
 }
 
+func TestConvertCommandArgsToRenderOptions_ThemeFile(t *testing.T) {
+	tempDir := t.TempDir()
+	themePath := filepath.Join(tempDir, "brand.css")
+	css := `
+@theme brand extends light;
+document {
+  color: #123456;
+  background: #f0f0f0;
+}
+link {
+  color: #ff0055;
+}
+`
+	if err := os.WriteFile(themePath, []byte(css), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	themeName := "dark"
+	// --theme-file overrides --theme "dark"
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, &themeName, &themePath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	r, g, b, _ := opts.Theme.Link.RGBA()
+	if uint8(r>>8) != 0xff || uint8(g>>8) != 0x00 || uint8(b>>8) != 0x55 {
+		t.Errorf("expected link color #ff0055 from theme-file, got rgba(%d, %d, %d)", r>>8, g>>8, b>>8)
+	}
+
+	// Invalid theme file error
+	badPath := filepath.Join(tempDir, "bad.css")
+	if err := os.WriteFile(badPath, []byte("unknown { bad: color; }"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, &badPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	if err == nil {
+		t.Fatal("expected error with bad theme file, got nil")
+	}
+}
+
 func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -158,7 +200,7 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected default AuthoredFirst, got %v", opts.FootnoteOrder)
 	}
 
-	opts2, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("authored-first"), "")
+	opts2, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("authored-first"), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +208,7 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected AuthoredFirst, got %v", opts2.FootnoteOrder)
 	}
 
-	opts3, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("links-first"), "")
+	opts3, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("links-first"), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,7 +216,7 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected LinksFirst, got %v", opts3.FootnoteOrder)
 	}
 
-	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("invalid-order"), "")
+	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("invalid-order"), "")
 	if err == nil {
 		t.Fatalf("expected error for invalid footnote order, got nil")
 	}

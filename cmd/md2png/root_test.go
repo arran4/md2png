@@ -31,6 +31,9 @@ func TestRoot_Execute(t *testing.T) {
 	args = append(args, "1.5")
 	args = append(args, "--theme")
 	args = append(args, "test")
+	args = append(args, "--theme-file")
+	args = append(args, "test")
+	args = append(args, "--transparent")
 	args = append(args, "--font")
 	args = append(args, "test")
 	args = append(args, "--fontbold")
@@ -94,6 +97,16 @@ func TestRoot_Execute(t *testing.T) {
 		t.Errorf("Expected theme to be non-nil")
 	} else if *cmd.theme != "test" {
 		t.Errorf("Expected theme to be 'test', got '%v'", *cmd.theme)
+	}
+	if cmd.themeFile == nil {
+		t.Errorf("Expected themeFile to be non-nil")
+	} else if *cmd.themeFile != "test" {
+		t.Errorf("Expected themeFile to be 'test', got '%v'", *cmd.themeFile)
+	}
+	if cmd.transparent == nil {
+		t.Errorf("Expected transparent to be non-nil")
+	} else if *cmd.transparent != true {
+		t.Errorf("Expected transparent to be true, got '%v'", *cmd.transparent)
 	}
 	if cmd.fontRegular == nil {
 		t.Errorf("Expected fontRegular to be non-nil")

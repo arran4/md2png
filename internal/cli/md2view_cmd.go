@@ -28,6 +28,8 @@ func Md2view(
 	margin *int, // flag: --margin Margin in pixels (0 for default)
 	pt *float64, // flag: --pt Base font size in points (paragraph) (0 for default)
 	theme *string, // flag: --theme Theme: light|dark (default: "light")
+	themeFile *string, // flag: --theme-file Path to CSS theme file
+	transparent *bool, // flag: --transparent Explicit transparent page background
 	fontRegular *string, // flag: --font Path to TTF for regular text (optional; default Go Regular)
 	fontBold *string, // flag: --fontbold Path to TTF for bold text (optional; default Go Bold)
 	fontMono *string, // flag: --fontmono Path to TTF for mono/code (optional; default Go Mono)
@@ -83,7 +85,7 @@ func Md2view(
 	}
 
 	opts, err := ConvertCommandArgsToRenderOptions(
-		nil, width, margin, pt, theme,
+		nil, width, margin, pt, theme, themeFile, transparent,
 		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
 		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
 		footnoteOrder,
@@ -99,10 +101,15 @@ func Md2view(
 	}
 
 	driver.Main(func(s screen.Screen) {
+		winWidth := img.Bounds().Dx()
+		if winWidth <= 0 {
+			winWidth = 800
+		}
+		winHeight := 800
 		w, err := s.NewWindow(&screen.NewWindowOptions{
 			Title:  "md2view",
-			Width:  img.Bounds().Dx(),
-			Height: 800,
+			Width:  winWidth,
+			Height: winHeight,
 		})
 		if err != nil {
 			log.Fatalf("new window: %v", err)
@@ -116,9 +123,24 @@ func Md2view(
 			}
 		}()
 
+		vp := NewViewport(img.Bounds().Size(), image.Point{X: winWidth, Y: winHeight})
+
+		reloader := NewReloader(
+			inPath,
+			data,
+			img,
+			func(updatedData []byte) (image.Image, error) {
+				return md2png.Render(updatedData, opts)
+			},
+			func(newImg image.Image) {
+				vp.SetImageSize(newImg.Bounds().Size())
+				w.Send(paint.Event{})
+			},
+		)
+		reloader.Start()
+		defer reloader.Stop()
+
 		var sz size.Event
-		offset := image.Point{}
-		zoom := 1.0
 
 		for {
 			e := w.NextEvent()
@@ -136,6 +158,7 @@ func Md2view(
 				if err != nil {
 					log.Fatal(err)
 				}
+				vp.SetWindowSize(sz.Size())
 				w.Send(paint.Event{})
 			case paint.Event:
 				if sz.Bounds().Empty() || b == nil {
@@ -145,55 +168,78 @@ func Md2view(
 				// Fill background
 				draw.Draw(b.RGBA(), b.RGBA().Bounds(), image.NewUniform(opts.Theme.BG), image.Point{}, draw.Src)
 
-				// Calculate scaled dimensions
-				scaledW := int(float64(img.Bounds().Dx()) * zoom)
-				scaledH := int(float64(img.Bounds().Dy()) * zoom)
-
-				// Calculate position based on offset
-				dr := image.Rect(offset.X, offset.Y, offset.X+scaledW, offset.Y+scaledH)
-
-				// Draw the scaled image onto the buffer
-				xdraw.ApproxBiLinear.Scale(b.RGBA(), dr, img, img.Bounds(), draw.Src, nil)
+				currentImg := reloader.LastGoodImage()
+				if currentImg != nil {
+					dr := vp.DestRect()
+					xdraw.ApproxBiLinear.Scale(b.RGBA(), dr, currentImg, currentImg.Bounds(), draw.Src, nil)
+				}
 
 				w.Upload(image.Point{}, b, b.Bounds())
 				w.Publish()
 			case mouse.Event:
 				if e.Direction == mouse.DirStep {
-					switch e.Button {
-					case mouse.ButtonWheelUp:
-						offset.Y += 40
-						w.Send(paint.Event{})
-					case mouse.ButtonWheelDown:
-						offset.Y -= 40
-						w.Send(paint.Event{})
+					center := image.Point{X: int(e.X), Y: int(e.Y)}
+					if e.Modifiers&key.ModControl != 0 {
+						switch e.Button {
+						case mouse.ButtonWheelUp:
+							vp.ZoomAt(1.15, center)
+							w.Send(paint.Event{})
+						case mouse.ButtonWheelDown:
+							vp.ZoomAt(1.0/1.15, center)
+							w.Send(paint.Event{})
+						}
+					} else {
+						switch e.Button {
+						case mouse.ButtonWheelUp:
+							vp.Pan(image.Point{Y: 40})
+							w.Send(paint.Event{})
+						case mouse.ButtonWheelDown:
+							vp.Pan(image.Point{Y: -40})
+							w.Send(paint.Event{})
+						}
 					}
 				}
 			case key.Event:
 				if e.Direction == key.DirPress {
+					center := image.Point{X: sz.WidthPx / 2, Y: sz.HeightPx / 2}
 					switch e.Code {
-					case key.CodeEscape:
+					case key.CodeEscape, key.CodeQ:
 						return
 					case key.CodeDownArrow:
-						offset.Y -= 40
+						vp.Pan(image.Point{Y: -40})
 						w.Send(paint.Event{})
 					case key.CodeUpArrow:
-						offset.Y += 40
+						vp.Pan(image.Point{Y: 40})
 						w.Send(paint.Event{})
 					case key.CodeLeftArrow:
-						offset.X += 40
+						vp.Pan(image.Point{X: 40})
 						w.Send(paint.Event{})
 					case key.CodeRightArrow:
-						offset.X -= 40
+						vp.Pan(image.Point{X: -40})
 						w.Send(paint.Event{})
 					case key.CodeEqualSign: // '+'
-						zoom *= 1.1
+						vp.ZoomAt(1.15, center)
 						w.Send(paint.Event{})
 					case key.CodeHyphenMinus: // '-'
-						zoom /= 1.1
+						vp.ZoomAt(1.0/1.15, center)
 						w.Send(paint.Event{})
-					case key.Code0: // reset zoom and offset
-						zoom = 1.0
-						offset = image.Point{}
+					case key.Code0, key.CodeKeypad0: // reset zoom to 100%
+						vp.Reset()
+						w.Send(paint.Event{})
+					case key.CodeW: // fit width
+						vp.FitWidthMode()
+						w.Send(paint.Event{})
+					case key.CodeF: // fit window
+						vp.FitWindowMode()
+						w.Send(paint.Event{})
+					case key.CodeC: // recenter
+						vp.Recenter()
+						w.Send(paint.Event{})
+					case key.CodeT, key.CodeHome: // scroll to top
+						vp.ScrollToTop()
+						w.Send(paint.Event{})
+					case key.CodeR: // manual reload
+						_, _ = reloader.ReloadNow()
 						w.Send(paint.Event{})
 					}
 				}

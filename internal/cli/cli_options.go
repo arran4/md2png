@@ -15,6 +15,8 @@ func ConvertCommandArgsToRenderOptions(
 	margin *int,
 	pt *float64,
 	theme *string,
+	themeFile *string,
+	transparent *bool,
 	fontRegular *string,
 	fontBold *string,
 	fontMono *string,
@@ -30,13 +32,23 @@ func ConvertCommandArgsToRenderOptions(
 	footnoteOrder *string,
 	baseDir string,
 ) (md2png.RenderOptions, error) {
-	themeName := "light"
-	if theme != nil {
-		themeName = *theme
-	}
-	th, err := md2png.ThemeByName(themeName)
-	if err != nil {
-		return md2png.RenderOptions{}, err
+	var th md2png.Theme
+	if themeFile != nil && *themeFile != "" {
+		loaded, err := md2png.LoadThemeFile(*themeFile)
+		if err != nil {
+			return md2png.RenderOptions{}, err
+		}
+		th = loaded
+	} else {
+		themeName := "light"
+		if theme != nil {
+			themeName = *theme
+		}
+		loaded, err := md2png.ThemeByName(themeName)
+		if err != nil {
+			return md2png.RenderOptions{}, err
+		}
+		th = loaded
 	}
 
 	cfg := md2png.FontConfig{}
@@ -86,6 +98,10 @@ func ConvertCommandArgsToRenderOptions(
 		BaseDir:          baseDir,
 		ImagePolicy:      &policy,
 		DiagnosticPolicy: &diagPolicy,
+	}
+
+	if transparent != nil && *transparent {
+		opts.TransparentBackground = true
 	}
 
 	if width != nil {
