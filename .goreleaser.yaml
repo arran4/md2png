@@ -50,7 +50,6 @@ builds:
   - id: md2view
     main: ./cmd/md2view
     binary: md2view
-    gobinary: go
     env:
       - CGO_ENABLED=1
     goos:
