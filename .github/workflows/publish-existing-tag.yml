@@ -63,6 +63,18 @@ jobs:
             exit 1
           fi
           echo "Publishing the existing tag $TARGET_TAG at $TAG_SHA without changing any Git refs."
+      - name: Use corrected release config from the workflow's main commit
+        # The historical tag contains its original broken release hook.
+        # Keep the source, version and git state at that exact tag, but
+        # use the reviewed release tooling config from this workflow run.
+        env:
+          CONFIG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "$CONFIG_SHA:.goreleaser.yaml"
+          git show "$CONFIG_SHA:.goreleaser.yaml" > "$RUNNER_TEMP/goreleaser-recovery.yaml"
+          grep -qx 'version: 2' "$RUNNER_TEMP/goreleaser-recovery.yaml"
+          echo "Using checked-in release configuration from $CONFIG_SHA for the existing tag."
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -72,7 +84,9 @@ jobs:
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          # Historical tagging runs never configured Mastodon credentials;
+          # do not make an optional social announcement block GitHub publishing.
+          args: release --clean --skip=announce --config ${{ runner.temp }}/goreleaser-recovery.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
