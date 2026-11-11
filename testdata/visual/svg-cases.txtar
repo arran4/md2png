@@ -1,0 +1,38 @@
+-- showcase.md --
+# SVG output showcase
+
+This paragraph combines **bold**, *italic*, ***bold italic***, and ~~strikethrough~~.
+A [linked phrase](https://example.com) also exercises underlining and generated URL footnotes.
+
+## Tasks, code and rules
+
+- [x] Render an editable SVG
+- [ ] Compare fonts and spacing across viewers
+
+~~~go
+package demo
+func Render() string { return "vector + raster" }
+~~~
+
+> A blockquote has a visible colored bar.
+
+---
+
+| Output | Expectation |
+| :--- | :--- |
+| PNG | Raster pixels |
+| SVG | Text, lines and vector rectangles |
+
+![Small embedded raster sample](test_image.png)
+
+-- narrow.md --
+# Narrow layout
+
+A narrow page should wrap this deliberately long paragraph across multiple lines while keeping the baselines, margins, and heading positions consistent between raster and SVG.
+
+- First item
+- Second item with **bold** and *italic* formatting
+
+~~~text
+A narrow fixed-width code block
+~~~

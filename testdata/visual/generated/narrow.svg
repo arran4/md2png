@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 780 359" width="780" height="359">
+  <style>
+    text { font-family: Go, "Go Regular", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "Go Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; }
+  </style>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="48" y="90" font-size="40.53" fill="#111111" xml:space="preserve">Narrow layout</text>
+  <text x="48" y="126" font-size="21.33" fill="#111111" xml:space="preserve">A narrow page should wrap this deliberately long paragraph across</text>
+  <text x="48" y="148" font-size="21.33" fill="#111111" xml:space="preserve">multiple lines while keeping the baselines, margins, and heading</text>
+  <text x="48" y="170" font-size="21.33" fill="#111111" xml:space="preserve">positions consistent between raster and SVG.</text>
+  <text x="84" y="206" font-size="21.33" fill="#111111" xml:space="preserve">First item</text>
+  <text x="69" y="206" font-size="21.33" fill="#111111" xml:space="preserve">•</text>
+  <text x="84" y="237" font-size="21.33" fill="#111111" xml:space="preserve">Second item with </text>
+  <text x="254" y="237" font-size="21.33" fill="#111111" font-weight="bold" xml:space="preserve">bold</text>
+  <text x="299" y="237" font-size="21.33" fill="#111111" xml:space="preserve"> and </text>
+  <text x="347" y="237" font-size="21.33" fill="#111111" font-style="italic" xml:space="preserve">italic</text>
+  <text x="392" y="237" font-size="21.33" fill="#111111" xml:space="preserve"> formatting</text>
+  <text x="69" y="237" font-size="21.33" fill="#111111" xml:space="preserve">•</text>
+  <rect x="48" y="258" width="684" height="47" fill="#f5f5f7"/>
+  <text x="58" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve">A</text>
+  <text x="70" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="82" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve">narrow</text>
+  <text x="154" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="166" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve">fixed-width</text>
+  <text x="298" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="310" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve">code</text>
+  <text x="358" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve"> </text>
+  <text x="370" y="283" font-size="20.27" fill="#111111" class="mono" xml:space="preserve">block</text>
+</svg>
