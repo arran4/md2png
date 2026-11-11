@@ -169,14 +169,14 @@ jobs:
         with:
           mode: install
       - name: Verify Exact Origin/Main
-        env:
-          GITHUB_REF_NAME: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF_NAME" != "refs/heads/main" ]]; then
-            echo "Error: Manual release preparation must run on refs/heads/main, got $GITHUB_REF_NAME"
-            sh -c "exit 1"
+          # GITHUB_REF is the fully-qualified ref (refs/heads/main).
+          # GITHUB_REF_NAME is the short ref ("main") and cannot be
+          # overridden through step env, even when set to github.ref.
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Error: Manual release preparation must run on refs/heads/main, got $GITHUB_REF"
+            exit 1
           fi
           git fetch origin main
           MAIN_SHA=$(git rev-parse origin/main)
