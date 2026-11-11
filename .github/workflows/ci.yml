@@ -375,6 +375,21 @@ jobs:
           if ! git diff --quiet; then echo 'Generated code is out of date'; git diff; false; fi
       - name: Test
         run: go test ./... -v
+      - name: Validate GoReleaser v2 configuration
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
+      - name: Smoke-test release README render hook
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          go run ./cmd/md2png --in README.md --out "$tmpdir/readme.png"
+          test -s "$tmpdir/readme.png"
+          file "$tmpdir/readme.png" | grep -q 'PNG image data'
 
   go-vet:
     name: Go vet
