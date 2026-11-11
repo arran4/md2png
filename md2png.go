@@ -1800,7 +1800,7 @@ func (r *renderer) collectInlineTokensStyled(node ast.Node, md []byte, st inline
 			if r.footnoteOrder == FootnoteOrderLinksFirst {
 				idx = len(r.footnotes) + c.Index
 			}
-			r.appendFootnoteMarker(out, size, idx)
+			r.appendFootnoteMarker(out, st.size, idx)
 		case *extensionAST.FootnoteBacklink:
 			// Backlinks are omitted in static raster output.
 		case *ast.RawHTML:
