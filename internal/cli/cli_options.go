@@ -7,42 +7,68 @@ import (
 	"github.com/arran4/md2png"
 )
 
-// ConvertCommandArgsToRenderOptions tests the logic for mapping pointer arguments
-// from go-subcommand into a md2png.RenderOptions struct, exactly as Md2png/Md2view do.
-func ConvertCommandArgsToRenderOptions(
-	strict *bool,
-	width *int,
-	margin *int,
-	pt *float64,
-	theme *string,
-	themeFile *string,
-	transparent *bool,
-	fontRegular *string,
-	fontBold *string,
-	fontMono *string,
-	fontItalic *string,
-	fontBoldItalic *string,
-	fontFallback *string,
-	footnoteLinks *bool,
-	footnoteImages *bool,
-	maxHeight *int,
-	tableFitWidth *bool,
-	disableHighlighting *bool,
-	codeTabWidth *int,
-	footnoteOrder *string,
-	baseDir string,
-) (md2png.RenderOptions, error) {
+// CommandRenderArgs holds optional go-subcommand rendering flags. A nil pointer
+// means that flag was absent; explicit false and zero values remain distinct.
+// This is the internal CLI adapter input, not the public md2png.RenderOptions.
+type CommandRenderArgs struct {
+	Strict *bool
+	Width *int
+	Margin *int
+	Pt *float64
+	Theme *string
+	ThemeFile *string
+	Transparent *bool
+	FontRegular *string
+	FontBold *string
+	FontMono *string
+	FontItalic *string
+	FontBoldItalic *string
+	FontFallback *string
+	FootnoteLinks *bool
+	FootnoteImages *bool
+	MaxHeight *int
+	TableFitWidth *bool
+	DisableHighlighting *bool
+	CodeTabWidth *int
+	FootnoteOrder *string
+	BaseDir string
+}
+
+// ConvertCommandArgsToRenderOptions translates optional command input to the
+// renderer's typed options. The type-switch currently recognizes one option
+// type, CommandRenderArgs, and is intentionally extensible for future typed
+// options or a go-subcommand-generated CommandRenderArgs.
+//
+// Zero arguments mean defaults. Repeating CommandRenderArgs replaces the
+// previous complete configuration (last value wins); unknown types, including
+// nil and typed-nil pointers, are rejected rather than silently ignored.
+func ConvertCommandArgsToRenderOptions(options ...any) (md2png.RenderOptions, error) {
+	var args CommandRenderArgs
+	for _, option := range options {
+		switch v := option.(type) {
+		case CommandRenderArgs:
+			args = v
+		default:
+			return md2png.RenderOptions{}, fmt.Errorf("unsupported command render option %T", option)
+		}
+	}
+	return convertCommandRenderArgs(args)
+}
+
+// convertCommandRenderArgs contains the existing CLI-specific defaulting,
+// validation and font/theme materialization logic in one place.
+func convertCommandRenderArgs(a CommandRenderArgs) (md2png.RenderOptions, error) {
 	var th md2png.Theme
-	if themeFile != nil && *themeFile != "" {
-		loaded, err := md2png.LoadThemeFile(*themeFile)
+	if a.ThemeFile != nil && *a.ThemeFile != "" {
+		loaded, err := md2png.LoadThemeFile(*a.ThemeFile)
 		if err != nil {
 			return md2png.RenderOptions{}, err
 		}
 		th = loaded
 	} else {
 		themeName := "light"
-		if theme != nil {
-			themeName = *theme
+		if a.Theme != nil {
+			themeName = *a.Theme
 		}
 		loaded, err := md2png.ThemeByName(themeName)
 		if err != nil {
@@ -52,30 +78,30 @@ func ConvertCommandArgsToRenderOptions(
 	}
 
 	cfg := md2png.FontConfig{}
-	if fontRegular != nil {
-		cfg.RegularPath = *fontRegular
+	if a.FontRegular != nil {
+		cfg.RegularPath = *a.FontRegular
 	}
-	if fontBold != nil {
-		cfg.BoldPath = *fontBold
+	if a.FontBold != nil {
+		cfg.BoldPath = *a.FontBold
 	}
-	if fontMono != nil {
-		cfg.MonoPath = *fontMono
+	if a.FontMono != nil {
+		cfg.MonoPath = *a.FontMono
 	}
-	if fontItalic != nil {
-		cfg.ItalicPath = *fontItalic
+	if a.FontItalic != nil {
+		cfg.ItalicPath = *a.FontItalic
 	}
-	if fontBoldItalic != nil {
-		cfg.BoldItalicPath = *fontBoldItalic
+	if a.FontBoldItalic != nil {
+		cfg.BoldItalicPath = *a.FontBoldItalic
 	}
-	if fontFallback != nil && *fontFallback != "" {
-		for _, p := range strings.Split(*fontFallback, ",") {
+	if a.FontFallback != nil && *a.FontFallback != "" {
+		for _, p := range strings.Split(*a.FontFallback, ",") {
 			if trimmed := strings.TrimSpace(p); trimmed != "" {
 				cfg.FallbackPaths = append(cfg.FallbackPaths, trimmed)
 			}
 		}
 	}
-	if pt != nil {
-		cfg.SizeBase = *pt
+	if a.Pt != nil {
+		cfg.SizeBase = *a.Pt
 	}
 
 	fonts, err := md2png.LoadFonts(cfg)
@@ -86,7 +112,7 @@ func ConvertCommandArgsToRenderOptions(
 	policy := md2png.DefaultCLIImagePolicy()
 
 	diagPolicy := md2png.DiagnosticPolicy{}
-	if strict != nil && *strict {
+	if a.Strict != nil && *a.Strict {
 		diagPolicy.FailOnImageError = true
 		diagPolicy.FailOnRawHTML = true
 		diagPolicy.FailOnUnsupported = true
@@ -95,61 +121,61 @@ func ConvertCommandArgsToRenderOptions(
 	opts := md2png.RenderOptions{
 		Theme:            th,
 		Fonts:            fonts,
-		BaseDir:          baseDir,
+		BaseDir:          a.BaseDir,
 		ImagePolicy:      &policy,
 		DiagnosticPolicy: &diagPolicy,
 	}
 
-	if transparent != nil && *transparent {
+	if a.Transparent != nil && *a.Transparent {
 		opts.TransparentBackground = true
 	}
 
-	if width != nil {
-		opts.Width = *width
+	if a.Width != nil {
+		opts.Width = *a.Width
 	}
-	if margin != nil {
-		opts.Margin = *margin
-		opts.ZeroMargin = *margin == 0
+	if a.Margin != nil {
+		opts.Margin = *a.Margin
+		opts.ZeroMargin = *a.Margin == 0
 	}
-	if pt != nil {
-		opts.BaseFontSize = *pt
+	if a.Pt != nil {
+		opts.BaseFontSize = *a.Pt
 	}
 
-	if footnoteLinks != nil {
-		opts.LinkFootnotes = footnoteLinks
+	if a.FootnoteLinks != nil {
+		opts.LinkFootnotes = a.FootnoteLinks
 	} else {
 		t := true
 		opts.LinkFootnotes = &t
 	}
-	if footnoteImages != nil {
-		opts.ImageFootnotes = footnoteImages
+	if a.FootnoteImages != nil {
+		opts.ImageFootnotes = a.FootnoteImages
 	} else {
 		f := false
 		opts.ImageFootnotes = &f
 	}
-	if maxHeight != nil {
-		opts.MaxHeight = *maxHeight
+	if a.MaxHeight != nil {
+		opts.MaxHeight = *a.MaxHeight
 	}
-	if tableFitWidth != nil {
-		opts.TableFitWidth = *tableFitWidth
+	if a.TableFitWidth != nil {
+		opts.TableFitWidth = *a.TableFitWidth
 	}
-	if disableHighlighting != nil {
-		opts.DisableHighlighting = *disableHighlighting
+	if a.DisableHighlighting != nil {
+		opts.DisableHighlighting = *a.DisableHighlighting
 	}
-	if codeTabWidth != nil && *codeTabWidth > 0 {
-		opts.CodeTabWidth = *codeTabWidth
+	if a.CodeTabWidth != nil && *a.CodeTabWidth > 0 {
+		opts.CodeTabWidth = *a.CodeTabWidth
 	} else {
 		opts.CodeTabWidth = 4
 	}
 
-	if footnoteOrder != nil && *footnoteOrder != "" {
-		switch strings.ToLower(*footnoteOrder) {
+	if a.FootnoteOrder != nil && *a.FootnoteOrder != "" {
+		switch strings.ToLower(*a.FootnoteOrder) {
 		case "authored-first", "authored":
 			opts.FootnoteOrder = md2png.FootnoteOrderAuthoredFirst
 		case "links-first", "urls-first", "links":
 			opts.FootnoteOrder = md2png.FootnoteOrderLinksFirst
 		default:
-			return opts, fmt.Errorf("unknown footnote order %q, expected 'authored-first' or 'links-first'", *footnoteOrder)
+			return opts, fmt.Errorf("unknown footnote order %q, expected 'authored-first' or 'links-first'", *a.FootnoteOrder)
 		}
 	}
 
