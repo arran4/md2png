@@ -477,8 +477,13 @@ jobs:
   goreleaser:
     name: GoReleaser
     needs: [route, discover, release-ready]
-    if: ${{ needs.route.outputs.run_publisher == 'true' && needs.discover.outputs.has_goreleaser == 'true' }}
+    # An upstream quality-gate dependency may be skipped deliberately on publish-tag.
+    # Include a status function so GitHub does not implicitly require all ancestors to succeed.
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.discover.result == 'success' && needs.release-ready.result == 'success' && needs.route.outputs.run_publisher == 'true' && needs.discover.outputs.has_goreleaser == 'true' }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-${{ github.ref_name }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -510,6 +515,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+  verify-publisher:
+    name: Require actual publishing when publish-tag was requested
+    needs: [route, goreleaser]
+    # Do not report a successful publish-tag run if GoReleaser was skipped.
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.route.outputs.run_publisher == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GoReleaser result
+        env:
+          GORELEASER_RESULT: ${{ needs.goreleaser.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$GORELEASER_RESULT" != "success" ]]; then
+            echo "::error::Publishing was requested, but GoReleaser finished as '$GORELEASER_RESULT'. No release was verified."
+            exit 1
+          fi
 
   render-and-refresh:
     name: Render documentation assets

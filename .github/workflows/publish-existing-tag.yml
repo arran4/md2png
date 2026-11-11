@@ -1,0 +1,86 @@
+# Explicit recovery path for an existing Git tag. This workflow is dispatched
+# from main so its implementation can be fixed without rewriting historical tags.
+name: Publish Existing Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to publish, e.g. v0.5.20'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-existing-tag:
+    name: Publish existing tag with GoReleaser
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-${{ inputs.tag }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Validate tag input
+        env:
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error::Expected an existing version tag such as v0.5.20, got '$TARGET_TAG'"
+            exit 1
+          fi
+      - name: Check out existing tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Verify tag ancestry and avoid republishing
+        env:
+          TARGET_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if ! TAG_SHA="$(git rev-parse --verify "refs/tags/$TARGET_TAG^{commit}")"; then
+            echo "::error::Tag '$TARGET_TAG' does not exist."
+            exit 1
+          fi
+          CHECKOUT_SHA="$(git rev-parse HEAD)"
+          if [[ "$TAG_SHA" != "$CHECKOUT_SHA" ]]; then
+            echo "::error::Checkout $CHECKOUT_SHA does not match tag $TARGET_TAG ($TAG_SHA)."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$TAG_SHA" origin/main; then
+            echo "::error::Tag '$TARGET_TAG' is not on the main branch history."
+            exit 1
+          fi
+          if gh release view "$TARGET_TAG" >/dev/null 2>&1; then
+            echo "::error::A GitHub Release already exists for '$TARGET_TAG'; refusing to overwrite it."
+            exit 1
+          fi
+          echo "Publishing the existing tag $TARGET_TAG at $TAG_SHA without changing any Git refs."
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Publish with GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag }}
+      - name: Verify GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TARGET_TAG" --json tagName,url,isDraft,isPrerelease --jq '.tagName + " published: " + .url'
