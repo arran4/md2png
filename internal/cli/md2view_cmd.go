@@ -84,13 +84,28 @@ func Md2view(
 		return err
 	}
 
-	opts, err := ConvertCommandArgsToRenderOptions(
-		nil, width, margin, pt, theme, themeFile, transparent,
-		fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback,
-		footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth,
-		footnoteOrder,
-		baseDir,
-	)
+	opts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{
+		Width: width,
+		Margin: margin,
+		Pt: pt,
+		Theme: theme,
+		ThemeFile: themeFile,
+		Transparent: transparent,
+		FontRegular: fontRegular,
+		FontBold: fontBold,
+		FontMono: fontMono,
+		FontItalic: fontItalic,
+		FontBoldItalic: fontBoldItalic,
+		FontFallback: fontFallback,
+		FootnoteLinks: footnoteLinks,
+		FootnoteImages: footnoteImages,
+		MaxHeight: maxHeight,
+		TableFitWidth: tableFitWidth,
+		DisableHighlighting: disableHighlighting,
+		CodeTabWidth: codeTabWidth,
+		FootnoteOrder: footnoteOrder,
+		BaseDir: baseDir,
+	})
 	if err != nil {
 		return err
 	}

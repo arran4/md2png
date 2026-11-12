@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ func ptrFloat64(v float64) *float64 { return &v }
 func ptrString(s string) *string    { return &s }
 
 func TestCLIValidationBehavior(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, ptrInt(800), ptrInt(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{Width: ptrInt(800), Margin: ptrInt(0)})
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 		t.Fatalf("expected image, got nil")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, ptrFloat64(0), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(CommandRenderArgs{Pt: ptrFloat64(0)})
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -51,7 +52,7 @@ func TestCLIValidationBehavior(t *testing.T) {
 
 func TestCLIDisableHighlighting(t *testing.T) {
 	// Default absent behavior
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions()
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping true
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(CommandRenderArgs{DisableHighlighting: ptrBool(true)})
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -69,7 +70,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 	}
 
 	// Disable mapping false
-	opts3, err3 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, "")
+	opts3, err3 := ConvertCommandArgsToRenderOptions(CommandRenderArgs{DisableHighlighting: ptrBool(false)})
 	if err3 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err3)
 	}
@@ -79,7 +80,7 @@ func TestCLIDisableHighlighting(t *testing.T) {
 }
 
 func TestCLITableFitWidthEquivalence(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{TableFitWidth: ptrBool(true)})
 	if err != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestCLITableFitWidthEquivalence(t *testing.T) {
 		t.Errorf("expected TableFitWidth to be true")
 	}
 
-	opts2, err2 := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(false), nil, nil, nil, "")
+	opts2, err2 := ConvertCommandArgsToRenderOptions(CommandRenderArgs{TableFitWidth: ptrBool(false)})
 	if err2 != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", err2)
 	}
@@ -111,7 +112,7 @@ func TestCLITableFitWidthEndToEnd(t *testing.T) {
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(nil, ptrInt(200), ptrInt(10), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrBool(true), nil, nil, nil, "")
+	optsCLI, errCLI := ConvertCommandArgsToRenderOptions(CommandRenderArgs{Width: ptrInt(200), Margin: ptrInt(10), TableFitWidth: ptrBool(true)})
 	if errCLI != nil {
 		t.Fatalf("unexpected ConvertCommandArgsToRenderOptions error: %v", errCLI)
 	}
@@ -140,7 +141,7 @@ func TestConvertCommandArgsToRenderOptions_CodeTabWidth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tt.codeTabWidth, nil, "")
+			opts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{CodeTabWidth: tt.codeTabWidth})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -170,7 +171,7 @@ link {
 
 	themeName := "dark"
 	// --theme-file overrides --theme "dark"
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, &themeName, &themePath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{Theme: &themeName, ThemeFile: &themePath})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,14 +186,14 @@ link {
 	if err := os.WriteFile(badPath, []byte("unknown { bad: color; }"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, &badPath, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	_, err = ConvertCommandArgsToRenderOptions(CommandRenderArgs{ThemeFile: &badPath})
 	if err == nil {
 		t.Fatal("expected error with bad theme file, got nil")
 	}
 }
 
 func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
-	opts, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	opts, err := ConvertCommandArgsToRenderOptions()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected default AuthoredFirst, got %v", opts.FootnoteOrder)
 	}
 
-	opts2, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("authored-first"), "")
+	opts2, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{FootnoteOrder: ptrString("authored-first")})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +209,7 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected AuthoredFirst, got %v", opts2.FootnoteOrder)
 	}
 
-	opts3, err := ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("links-first"), "")
+	opts3, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{FootnoteOrder: ptrString("links-first")})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,8 +217,54 @@ func TestConvertCommandArgsToRenderOptions_FootnoteOrder(t *testing.T) {
 		t.Errorf("expected LinksFirst, got %v", opts3.FootnoteOrder)
 	}
 
-	_, err = ConvertCommandArgsToRenderOptions(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptrString("invalid-order"), "")
+	_, err = ConvertCommandArgsToRenderOptions(CommandRenderArgs{FootnoteOrder: ptrString("invalid-order")})
 	if err == nil {
 		t.Fatalf("expected error for invalid footnote order, got nil")
+	}
+}
+
+// The type-switched variadic boundary accepts a complete typed struct while
+// preserving omitted vs explicit values, and rejects unknown option types.
+func TestConvertCommandArgsToRenderOptions_TypeSwitchedStruct(t *testing.T) {
+	t.Run("no arguments defaults", func(t *testing.T) {
+		got, err := ConvertCommandArgsToRenderOptions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !*got.LinkFootnotes || *got.ImageFootnotes || got.CodeTabWidth != 4 {
+			t.Fatalf("unexpected default options: %+v", got)
+		}
+	})
+	t.Run("typed struct with explicit false and zero", func(t *testing.T) {
+		got, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{
+			Margin: ptrInt(0),
+			TableFitWidth: ptrBool(false),
+			FootnoteLinks: ptrBool(false),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.ZeroMargin || got.TableFitWidth || *got.LinkFootnotes {
+			t.Fatalf("explicit false/zero was not preserved: %+v", got)
+		}
+	})
+	t.Run("last struct wins", func(t *testing.T) {
+		got, err := ConvertCommandArgsToRenderOptions(
+			CommandRenderArgs{TableFitWidth: ptrBool(true)},
+			CommandRenderArgs{Margin: ptrInt(0)},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.TableFitWidth || !got.ZeroMargin {
+			t.Fatalf("last config did not replace first: %+v", got)
+		}
+	})
+	for _, option := range []any{nil, 3, "unknown", (*CommandRenderArgs)(nil)} {
+		t.Run(fmt.Sprintf("unsupported-%T", option), func(t *testing.T) {
+			if _, err := ConvertCommandArgsToRenderOptions(option); err == nil {
+				t.Fatalf("expected unsupported option error for %T", option)
+			}
+		})
 	}
 }

@@ -151,7 +151,25 @@ func RunBatch(
 	}
 
 	// Validate render options once upfront before starting workers
-	if _, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, nil, nil, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, nil, ""); err != nil {
+	if _, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{
+		Strict: strict,
+		Width: width,
+		Margin: margin,
+		Pt: pt,
+		Theme: theme,
+		FontRegular: fontRegular,
+		FontBold: fontBold,
+		FontMono: fontMono,
+		FontItalic: fontItalic,
+		FontBoldItalic: fontBoldItalic,
+		FontFallback: fontFallback,
+		FootnoteLinks: footnoteLinks,
+		FootnoteImages: footnoteImages,
+		MaxHeight: maxHeight,
+		TableFitWidth: tableFitWidth,
+		DisableHighlighting: disableHighlighting,
+		CodeTabWidth: codeTabWidth,
+	}); err != nil {
 		return fmt.Errorf("md2png batch: option error: %w", err)
 	}
 
@@ -183,7 +201,25 @@ func RunBatch(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			workerOpts, err := ConvertCommandArgsToRenderOptions(strict, width, margin, pt, theme, nil, nil, fontRegular, fontBold, fontMono, fontItalic, fontBoldItalic, fontFallback, footnoteLinks, footnoteImages, maxHeight, tableFitWidth, disableHighlighting, codeTabWidth, nil, "")
+			workerOpts, err := ConvertCommandArgsToRenderOptions(CommandRenderArgs{
+				Strict: strict,
+				Width: width,
+				Margin: margin,
+				Pt: pt,
+				Theme: theme,
+				FontRegular: fontRegular,
+				FontBold: fontBold,
+				FontMono: fontMono,
+				FontItalic: fontItalic,
+				FontBoldItalic: fontBoldItalic,
+				FontFallback: fontFallback,
+				FootnoteLinks: footnoteLinks,
+				FootnoteImages: footnoteImages,
+				MaxHeight: maxHeight,
+				TableFitWidth: tableFitWidth,
+				DisableHighlighting: disableHighlighting,
+				CodeTabWidth: codeTabWidth,
+			})
 			if err != nil {
 				errMu.Lock()
 				taskErrors = append(taskErrors, fmt.Sprintf("options: %v", err))
