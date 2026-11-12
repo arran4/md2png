@@ -42,4 +42,4 @@ jobs:
           name: svg-visual-examples
           path: testdata/visual/generated/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
